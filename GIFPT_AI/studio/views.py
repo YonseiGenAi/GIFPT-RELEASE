@@ -8,7 +8,7 @@ import os
 
 from .serializers import AnalyzeRequestSerializer, ChatRequestSerializer
 from .tasks import analyze_pdf_prompt
-from gifpt_ai.celery import app as celery_app
+from GIFPT_AI.celery import app as celery_app
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None

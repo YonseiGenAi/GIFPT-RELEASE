@@ -1,5 +1,5 @@
 """
-WSGI config for gifpt_ai project.
+WSGI config for GIFPT_AI project.
 
 It exposes the WSGI callable as a module-level variable named ``application``.
 
@@ -11,6 +11,6 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gifpt_ai.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'GIFPT_AI.settings')
 
 application = get_wsgi_application()

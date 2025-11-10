@@ -51,7 +51,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'gifpt_ai.urls'
+ROOT_URLCONF = 'GIFPT_AI.urls'
 
 TEMPLATES = [
     {
@@ -68,7 +68,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'gifpt_ai.wsgi.application'
+WSGI_APPLICATION = 'GIFPT_AI.wsgi.application'
 
 
 # Database
