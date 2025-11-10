@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/gifpt?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+    username: root
+    password: ${DB_PASSWORD:}   # 로컬 .env에 DB_PASSWORD 넣어쓰면 됨
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+gifpt:
+  jwt:
+    secret: "dev_dev_dev_dev_dev_dev_dev_dev_32bytes_min"  # 로컬 개발용만 하드코딩 허자
+  

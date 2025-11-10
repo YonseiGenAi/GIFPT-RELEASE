@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: gifpt
+      MYSQL_USER: gifpt
+      MYSQL_PASSWORD: gifpt_pw
+      MYSQL_ROOT_PASSWORD: change_root_pw
+    command: ["mysqld","--character-set-server=utf8mb4","--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    restart: unless-stopped
+
+  spring:
+    build: ./spring
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/gifpt?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+      SPRING_DATASOURCE_USERNAME: gifpt
+      SPRING_DATASOURCE_PASSWORD: gifpt_pw
+      GIFPT_UPLOAD_DIR: /data/uploads
+      GIFPT_RESULT_DIR: /data/results
+      GIFPT_JWT_SECRET: change_me_very_long_64bytes
+    volumes:
+      - ./shared/uploads:/data/uploads
+      - ./shared/results:/data/results
+    ports: ["8080:8080"]
+    depends_on: [mysql]
+    restart: unless-stopped
+
+  django:
+    build: ./gifpt_ai
+    environment:
+      DJANGO_DEBUG: "0"
+      REDIS_URL: redis://redis:6379/0
+      SPRING_CALLBACK_BASE: http://spring:8080
+      GIFPT_UPLOAD_DIR: /data/uploads
+      GIFPT_RESULT_DIR: /data/results
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CELERY_QUEUE: gifpt.default
+    volumes:
+      - ./shared/uploads:/data/uploads
+      - ./shared/results:/data/results
+    depends_on: [redis]
+    ports: ["8000:8000"]
+    restart: unless-stopped
+    command: bash -lc "python manage.py migrate && gunicorn gifpt_ai.wsgi:application --bind 0.0.0.0:8000"
+
+  worker:
+    build: ./gifpt_ai
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SPRING_CALLBACK_BASE: http://spring:8080
+      GIFPT_UPLOAD_DIR: /data/uploads
+      GIFPT_RESULT_DIR: /data/results
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CELERY_QUEUE: gifpt.default
+    volumes:
+      - ./shared/uploads:/data/uploads
+      - ./shared/results:/data/results
+    depends_on: [redis, django]
+    restart: unless-stopped
+    command: celery -A gifpt_ai worker -l info -Q gifpt.default

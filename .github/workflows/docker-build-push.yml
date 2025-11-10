@@ -1,0 +1,69 @@
+name: Build & Push Docker Images (AMD64)
+
+
+on:
+  push:
+    branches: [ dev ]
+    paths:
+      - 'GIFPT-BE/**'
+      - 'GIFPT_AI/**'
+      - '.github/workflows/**'
+  workflow_dispatch: {}
+
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: spring
+            context: GIFPT-BE
+            dockerfile: GIFPT-BE/Dockerfile
+            image: ehho/gifpt-spring
+          - name: django
+            context: GIFPT_AI
+            dockerfile: GIFPT_AI/Dockerfile
+            image: ehho/gifpt-django
+          - name: worker
+            context: GIFPT_AI
+            dockerfile: GIFPT_AI/Dockerfile
+            image: ehho/gifpt-worker
+
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}   # ex) ehho
+          password: ${{ secrets.DOCKERHUB_TOKEN }}      # Docker Hub Access Token
+
+
+      - name: Build & Push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          # EC2가 amd64이므로 플랫폼 고정
+          platforms: linux/amd64
+          tags: |
+            ${{ matrix.image }}:latest
+            ${{ matrix.image }}:${{ github.sha }}
+          # 캐시(옵션)
+
+          cache-from: type=registry,ref=${{ matrix.image }}:buildcache
+
+          cache-to: type=registry,ref=${{ matrix.image }}:buildcache,mode=max

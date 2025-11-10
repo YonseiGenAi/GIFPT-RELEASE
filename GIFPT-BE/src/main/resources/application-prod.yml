@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    # 도커 컴포즈면 mysql 컨테이너 서비스명이 host가 됨
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://mysql:3306/gifpt?useSSL=false&serverTimezone=UTC&characterEncoding=utf8}
+    username: ${SPRING_DATASOURCE_USERNAME:gifpt}
+    password: ${SPRING_DATASOURCE_PASSWORD:gifpt_pw}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+
+logging:
+  level:
+    root: INFO
+
+gifpt:
+  jwt:
+    secret: ${GIFPT_JWT_SECRET}   # 무조건 환경변수로 주입!
+    
