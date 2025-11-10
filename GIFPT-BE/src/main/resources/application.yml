@@ -13,6 +13,7 @@ springdoc:
     path: /swagger-ui
   api-docs:
     path: /v3/api-docs
+    config-url: /v3/api-docs/swagger-config
 
 gifpt:
   jwt:
