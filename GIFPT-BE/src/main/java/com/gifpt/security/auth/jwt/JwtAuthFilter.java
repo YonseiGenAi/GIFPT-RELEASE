@@ -32,9 +32,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     String p = request.getServletPath();
     return p.equals("/healthz")
         || p.startsWith("/actuator/health")
+        || p.equals("/swagger-ui.html")
+        || p.startsWith("/swagger-ui")
         || p.equals("/v3/api-docs")
         || p.startsWith("/v3/api-docs")
-        || p.startsWith("/swagger-ui");
+        || p.equals("/v3/api-docs/swagger-config")
+        || p.equals("/v3/api-docs.yaml")
+        // 공개 인증/콜백 경로도 제외(원하면)
+        || p.startsWith("/api/v1/auth/")
+        || p.matches("^/api/v1/analysis/[^/]+/complete$");
   }
 
   @Override
