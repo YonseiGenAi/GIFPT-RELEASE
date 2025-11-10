@@ -24,6 +24,12 @@ jobs:
       - name: Checkout (optional)
         uses: actions/checkout@v4
 
+      - name: Guard: check secrets
+        run: |
+          [ -n "${{ secrets.EC2_HOST }}" ] || { echo "EC2_HOST missing"; exit 1; }
+          [ -n "${{ secrets.EC2_USER }}" ] || { echo "EC2_USER missing"; exit 1; }
+          [ -n "${{ secrets.EC2_SSH_KEY }}" ] || { echo "EC2_SSH_KEY missing"; exit 1; }
+
       - name: SSH into EC2 & Deploy
         uses: appleboy/ssh-action@v1.2.0
         with:
