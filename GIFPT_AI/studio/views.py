@@ -1,17 +1,24 @@
+# studio/views.py
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from celery.result import AsyncResult
 from django.conf import settings
-from openai import OpenAI
 import os
 
 from .serializers import AnalyzeRequestSerializer, ChatRequestSerializer
 from .tasks import analyze_pdf_prompt
 from GIFPT_AI.celery import app as celery_app
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+def get_openai_client():
+    """환경변수 기반으로 OpenAI 클라이언트를 지연 생성."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    # import를 함수 내부로 옮겨 버전/시그니처 이슈가 있어도 전역 크래시 방지
+    from openai import OpenAI
+    # proxies 인자는 절대 전달하지 말고, 필요 시 컨테이너 env(HTTP[S]_PROXY)로 처리
+    return OpenAI(api_key=api_key)
 
 @api_view(['POST'])
 def analyze(request):
@@ -44,14 +51,22 @@ def chat(request):
 
     messages = [{"role": "system", "content": system_prompt}] + data["messages"]
 
+    client = get_openai_client()
     if client is None:
         last_user = next((m["content"] for m in reversed(data["messages"]) if m["role"] == "user"), "")
         return Response({"reply": f"[DUMMY] 질문: {last_user[:80]}...", "session_id": data.get("session_id", "")})
 
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        temperature=0.3,
-        messages=messages
-    )
-    reply = completion.choices[0].message.content
-    return Response({"reply": reply, "session_id": data.get("session_id", "")})
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            messages=messages,
+        )
+        reply = completion.choices[0].message.content
+        return Response({"reply": reply, "session_id": data.get("session_id", "")})
+    except Exception as e:
+        # 모델/네트워크 오류 시에도 서버가 죽지 않도록 방어
+        return Response(
+            {"reply": f"[ERROR] OpenAI 호출 실패: {e}", "session_id": data.get("session_id", "")},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
