@@ -1,9 +1,9 @@
 name: Deploy to EC2
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
   push:
-    branches: [ dev ]
+    branches: [dev]
     paths:
       - 'docker-compose.yml'
       - 'nginx/**'
@@ -19,54 +19,52 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout (optional)
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Guard: check secrets
         run: |
-          [ -n "${{ secrets.EC2_HOST }}" ] || { echo "EC2_HOST missing"; exit 1; }
-          [ -n "${{ secrets.EC2_USER }}" ] || { echo "EC2_USER missing"; exit 1; }
-          [ -n "${{ secrets.EC2_SSH_KEY }}" ] || { echo "EC2_SSH_KEY missing"; exit 1; }
+          test -n "${{ secrets.EC2_HOST }}" || { echo "EC2_HOST missing"; exit 1; }
+          test -n "${{ secrets.EC2_USER }}" || { echo "EC2_USER missing"; exit 1; }
+          test -n "${{ secrets.EC2_SSH_KEY }}" || { echo "EC2_SSH_KEY missing"; exit 1; }
+          test -n "${{ secrets.DOCKERHUB_USERNAME }}" || { echo "DOCKERHUB_USERNAME missing"; exit 1; }
+          test -n "${{ secrets.DOCKERHUB_TOKEN }}" || { echo "DOCKERHUB_TOKEN missing"; exit 1; }
 
       - name: SSH into EC2 & Deploy
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.EC2_HOST }}        # (Elastic IP 권장)
-          username: ${{ secrets.EC2_USER }}    # ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}      # PEM 내용 전체 (줄바꿈 포함)
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
+          timeout: 600s
+          command_timeout: 600s
           script: |
             set -euxo pipefail
             cd ~/GIFPT-server
-            # 필수 디렉토리 보장
             mkdir -p shared/uploads shared/results data/mysql nginx/conf.d nginx/certbot/www nginx/letsencrypt
-            # (옵션) 레포에서 최신 compose/nginx 가져오려면:
-            # git pull --rebase || true
-            # Docker Hub 로그인
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            # 최신 이미지 풀(컴포즈 기준)
             docker compose pull
-            # 컨테이너 롤아웃
             docker compose up -d --remove-orphans
-            # 간단 헬스체크 (최대 ~20초 대기)
-            for i in $(seq 1 20); do
-              if curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1 || curl -fsS http://localhost:8000/ >/dev/null 2>&1; then
+            for i in $(seq 1 60); do
+              if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 || \
+                 curl -fsS http://localhost:8000/        >/dev/null 2>&1; then
                 echo "Services are responding"
                 break
               fi
               echo "Waiting services... ($i)"
-              sleep 1
+              sleep 2
             done
-            # 불필요 이미지 정리 (실패해도 무시)
             docker image prune -af || true
+
       - name: Print running containers
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
           script: |
             docker compose ps
             docker logs gifpt-server-spring-1 --tail=50 || true
