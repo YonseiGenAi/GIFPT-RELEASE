@@ -10,6 +10,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,12 +31,23 @@ public class SecurityConfig {
     this.passwordEncoder = pe;
   }
 
+  // ✅ 시큐리티 필터 체인 '밖으로' 완전 제외
+  @Bean
+  public WebSecurityCustomizer webSecurityCustomizer() {
+    return web -> web.ignoring().requestMatchers(
+        "/healthz",
+        "/actuator/health", "/actuator/health/**",
+        "/v3/api-docs", "/v3/api-docs/**",
+        "/swagger-ui/**", "/swagger-ui.html"
+    );
+  }
+
   @Bean
   public AuthenticationProvider authenticationProvider() {
-      DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-      provider.setUserDetailsService(userDetailsService);
-      provider.setPasswordEncoder(passwordEncoder);
-      return provider;
+    DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+    provider.setUserDetailsService(userDetailsService);
+    provider.setPasswordEncoder(passwordEncoder);
+    return provider;
   }
 
   @Bean
@@ -52,13 +64,14 @@ public class SecurityConfig {
         .requestMatchers(
           "/healthz",
           "/actuator/health", "/actuator/health/**",
-          "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",
+          "/v3/api-docs", "/v3/api-docs/**",
+          "/swagger-ui/**", "/swagger-ui.html",
           "/api/v1/auth/**", "/api/v1/analysis/*/complete"
         ).permitAll()
         .anyRequest().authenticated()
       )
       .httpBasic(Customizer.withDefaults())
-      .authenticationProvider(authenticationProvider()) // ← 변경된 빈 주입
+      .authenticationProvider(authenticationProvider())
       .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
     return http.build();

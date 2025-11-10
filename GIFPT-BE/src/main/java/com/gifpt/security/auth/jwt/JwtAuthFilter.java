@@ -28,6 +28,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
   }
 
   @Override
+  protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
+    String p = request.getServletPath();
+    return p.equals("/healthz")
+        || p.startsWith("/actuator/health")
+        || p.equals("/v3/api-docs")
+        || p.startsWith("/v3/api-docs")
+        || p.startsWith("/swagger-ui");
+  }
+
+  @Override
   protected void doFilterInternal(@NonNull HttpServletRequest req, @NonNull HttpServletResponse res, @NonNull FilterChain chain)
       throws ServletException, IOException {
 
