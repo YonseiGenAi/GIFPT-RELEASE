@@ -31,17 +31,6 @@ public class SecurityConfig {
     this.passwordEncoder = pe;
   }
 
-  // ✅ 시큐리티 필터 체인 '밖으로' 완전 제외
-  @Bean
-  public WebSecurityCustomizer webSecurityCustomizer() {
-    return web -> web.ignoring().requestMatchers(
-        "/healthz",
-        "/actuator/health", "/actuator/health/**",
-        "/v3/api-docs", "/v3/api-docs/**",
-        "/swagger-ui/**", "/swagger-ui.html"
-    );
-  }
-
   @Bean
   public AuthenticationProvider authenticationProvider() {
     DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
