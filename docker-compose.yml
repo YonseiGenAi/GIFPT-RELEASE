@@ -68,3 +68,15 @@ services:
     depends_on: [redis, django]
     restart: unless-stopped
     command: celery -A GIFPT_AI worker -l info -Q gifpt.default
+
+  nginx:
+    image: nginx:latest
+    container_name: gifpt-server-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/certbot/www:/var/www/certbot
+      - ./nginx/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - spring
