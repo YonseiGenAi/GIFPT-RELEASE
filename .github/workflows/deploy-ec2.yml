@@ -23,14 +23,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Guard: check secrets
-        run: |
-          test -n "${{ secrets.EC2_HOST }}" || { echo "EC2_HOST missing"; exit 1; }
-          test -n "${{ secrets.EC2_USER }}" || { echo "EC2_USER missing"; exit 1; }
-          test -n "${{ secrets.EC2_SSH_KEY }}" || { echo "EC2_SSH_KEY missing"; exit 1; }
-          test -n "${{ secrets.DOCKERHUB_USERNAME }}" || { echo "DOCKERHUB_USERNAME missing"; exit 1; }
-          test -n "${{ secrets.DOCKERHUB_TOKEN }}" || { echo "DOCKERHUB_TOKEN missing"; exit 1; }
-
       - name: SSH into EC2 & Deploy
         uses: appleboy/ssh-action@v1.2.0
         with:
