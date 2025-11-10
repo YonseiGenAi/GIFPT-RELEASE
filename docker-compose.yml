@@ -68,5 +68,3 @@ services:
     depends_on: [redis, django]
     restart: unless-stopped
     command: celery -A gifpt_ai worker -l info -Q gifpt.default
-
-
