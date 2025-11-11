@@ -22,7 +22,7 @@ services:
   spring:
     build: ./spring
     environment:
-      SPRING_PROFILES_ACTIVE: prod
+      SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/gifpt?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
       SPRING_DATASOURCE_USERNAME: gifpt
       SPRING_DATASOURCE_PASSWORD: gifpt_pw
