@@ -13,6 +13,7 @@ import com.gifpt.security.auth.service.RefreshTokenService;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
+import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -52,7 +53,12 @@ public class AuthController {
     u.setDisplayName(req.displayName());
     userRepo.save(u);
 
-    String access = jwtService.generateToken(u.getEmail(), Map.of("role","USER","name",u.getDisplayName()));
+    Map<String, Object> claims = new HashMap<>();
+    claims.put("role", "USER");
+    claims.put("name", u.getDisplayName()); // HashMap은 null 값을 허용합니다.
+
+// 2. HashMap을 토큰 생성에 사용
+String access = jwtService.generateToken(u.getEmail(), claims);
     String refresh = refreshService.issue(u, 7);
 
     ResponseCookie cookie = ResponseCookie.from("refreshToken", refresh)
@@ -74,7 +80,10 @@ public class AuthController {
     );
     String email = auth.getName();
     User user = userRepo.findByEmail(email).orElseThrow();
-    String access = jwtService.generateToken(user.getEmail(), Map.of("role","USER","name",user.getDisplayName()));
+    Map<String, Object> claims = new HashMap<>();
+    claims.put("role", "USER");
+    claims.put("name", user.getDisplayName());
+    String access = jwtService.generateToken(user.getEmail(), claims);
     String refresh = refreshService.issue(user, 7);
 
     ResponseCookie cookie = ResponseCookie.from("refreshToken", refresh)
@@ -97,7 +106,11 @@ public class AuthController {
     var token = refreshService.validate(rawRefresh)
         .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
     var user = token.getUser();
-    String newAccess = jwtService.generateToken(user.getEmail(), Map.of("role","USER","name",user.getDisplayName()));
+    Map<String, Object> claims = new HashMap<>();
+    claims.put("role", "USER");
+    claims.put("name", user.getDisplayName());
+
+String newAccess = jwtService.generateToken(user.getEmail(), claims);
     return ResponseEntity.ok(Map.of("accessToken", newAccess));
   }
 
