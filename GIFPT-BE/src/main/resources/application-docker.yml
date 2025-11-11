@@ -34,9 +34,10 @@ logging:
     org.hibernate.SQL: info
     org.hibernate.orm.jdbc.bind: warn
 
-security:
-  jwt:
-    secret: ${JWT_SECRET}       # 반드시 주입
-    refresh-token:
-      cookie:
-        secure: true 
+jwt:
+  secret: ${JWT_SECRET:weorifjqwiodfgjoiwjfqoiwjfoiwjeqdiognwqifnoiwqndfiojojqvbner}       # 반드시 주입
+  expires-in-ms: 3600000         # 1시간
+  refresh-expires-in-ms: 1209600000  # 14일
+  refresh-token:
+    cookie:
+      secure: true 
