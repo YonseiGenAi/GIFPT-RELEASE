@@ -5,17 +5,57 @@ spring:
   config:
     import: "optional:file:.env[.properties]"
 
-server:
-  port: 8080
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/gifpt?useSSL=false&serverTimezone=UTC&characterEncoding=utf8}
+    username: ${SPRING_DATASOURCE_USERNAME:gifpt}
+    password: ${SPRING_DATASOURCE_PASSWORD:gifpt_pw}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update         # 운영은 필요시 validate로
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc.time_zone: UTC
 
+  # (선택) 파일 업로드 용량 제어
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+# SpringDoc(OpenAPI) 경로 명시 — Nginx 뒤에서 401 이슈 방지용으로 명확히 고정
 springdoc:
-  swagger-ui:
-    path: /swagger-ui
   api-docs:
     path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui/index.html
+    disable-swagger-default-url: true
     config-url: /v3/api-docs/swagger-config
 
+# 헬스체크 열어두기
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info"
+  endpoint:
+    health:
+      show-details: never
+
+# 애플리케이션 커스텀
 gifpt:
   jwt:
+    secret: ${GIFPT_JWT_SECRET:hWzP4u0XQb0zz0O6TPE5EPlDgE9x4NE4TTVEZmZAhEw6cU59Cqj2fV9XfQzP6hFZsMeX0O6rtsvJpBVi4ZsOXw==}
     expires-in-ms: 3600000  # 1시간
+  paths:
+    upload-dir: ${GIFPT_UPLOAD_DIR:/data/uploads}
+    result-dir: ${GIFPT_RESULT_DIR:/data/results}
+
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: INFO
   
