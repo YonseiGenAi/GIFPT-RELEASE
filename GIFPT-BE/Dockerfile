@@ -11,4 +11,4 @@ WORKDIR /app
 COPY --from=builder /app/build/libs/*SNAPSHOT.jar /app/app.jar
 ENV JAVA_OPTS="-Xms256m -Xmx512m"
 EXPOSE 8080
-ENTRYPOINT ["sh","-c","java $JAVA_OPTS -Duser.timezone=Asia/Seoul -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod} -jar /app/app.jar"]
+ENTRYPOINT ["sh","-c","java $JAVA_OPTS -Duser.timezone=Asia/Seoul -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-docker} -jar /app/app.jar"]
