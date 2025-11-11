@@ -1,61 +1,40 @@
 spring:
   application:
     name: gifpt
-  # 로컬 .env 쓰고 싶으면 옵션으로만 불러와라이
-  config:
-    import: "optional:file:.env[.properties]"
-
-  datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/gifpt?useSSL=false&serverTimezone=UTC&characterEncoding=utf8}
-    username: ${SPRING_DATASOURCE_USERNAME:gifpt}
-    password: ${SPRING_DATASOURCE_PASSWORD:gifpt_pw}
-    driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
-    hibernate:
-      ddl-auto: update         # 운영은 필요시 validate로
     open-in-view: false
     properties:
       hibernate:
         format_sql: true
-        jdbc.time_zone: UTC
+        # show_sql은 로거로 대체 (아래 logging 설정)
+    defer-datasource-initialization: false
+  sql:
+    init:
+      mode: never
 
-  # (선택) 파일 업로드 용량 제어
-  servlet:
-    multipart:
-      max-file-size: 50MB
-      max-request-size: 50MB
-
-# SpringDoc(OpenAPI) 경로 명시 — Nginx 뒤에서 401 이슈 방지용으로 명확히 고정
-springdoc:
-  api-docs:
-    path: /v3/api-docs
-  swagger-ui:
-    path: /swagger-ui/index.html
-    disable-swagger-default-url: true
-    config-url: /v3/api-docs/swagger-config
-
-# 헬스체크 열어두기
-management:
-  endpoints:
-    web:
-      exposure:
-        include: "health,info"
-  endpoint:
-    health:
-      show-details: never
-
-# 애플리케이션 커스텀
-gifpt:
-  jwt:
-    secret: ${GIFPT_JWT_SECRET:hWzP4u0XQb0zz0O6TPE5EPlDgE9x4NE4TTVEZmZAhEw6cU59Cqj2fV9XfQzP6hFZsMeX0O6rtsvJpBVi4ZsOXw==}
-    expires-in-ms: 3600000  # 1시간
-  paths:
-    upload-dir: ${GIFPT_UPLOAD_DIR:/data/uploads}
-    result-dir: ${GIFPT_RESULT_DIR:/data/results}
+server:
+  port: 8080
+  compression:
+    enabled: true
 
 logging:
   level:
-    root: INFO
-    org.springframework.web: INFO
-    org.hibernate.SQL: INFO
-  
+    org.hibernate.SQL: debug         # 실행되는 SQL
+    org.hibernate.orm.jdbc.bind: trace  # 바인딩 파라미터 (개발 중에만!)
+    com.zaxxer.hikari: info
+    root: info
+
+security:
+  jwt:
+    issuer: gifpt
+    header: Authorization       # 액세스 토큰을 담는 헤더
+    prefix: Bearer              # "Bearer <token>"
+    clock-skew-seconds: 30      # 시계 오차 허용
+    access-token:
+      expiry-seconds: 3600      # 1시간
+    refresh-token:
+      expiry-seconds: 1209600   # 14일
+      cookie:
+        name: refresh_token
+        same-site: Lax
+        http-only: true
