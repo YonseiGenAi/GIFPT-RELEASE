@@ -24,7 +24,7 @@ logging:
     com.zaxxer.hikari: info
     root: info
 
-security:
+gifpt:
   jwt:
     issuer: gifpt
     header: Authorization       # 액세스 토큰을 담는 헤더
