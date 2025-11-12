@@ -41,4 +41,12 @@ gifpt:
     refresh-expires-in-ms: 1209600000  # 14일
     refresh-token:
       cookie:
-        secure: true 
+        same-site: None
+        http-only: true
+        secure: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui/index.html

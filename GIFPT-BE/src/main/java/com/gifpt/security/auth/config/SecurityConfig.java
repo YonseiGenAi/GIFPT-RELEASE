@@ -47,6 +47,7 @@ public class SecurityConfig {
   SecurityFilterChain security(HttpSecurity http) throws Exception {
     http
       .csrf(csrf -> csrf.disable())
+      .cors(Customizer.withDefaults())
       .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
       .authorizeHttpRequests(auth -> auth
         .requestMatchers(
@@ -63,6 +64,23 @@ public class SecurityConfig {
       .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
     return http.build();
+  }
+
+  @Bean
+  org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource(
+  ) {
+    var c = new org.springframework.web.cors.CorsConfiguration();
+    c.setAllowedOrigins(java.util.List.of(
+      "https://gifpt-front.vercel.app"
+    ));
+    c.setAllowedMethods(java.util.List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+    c.setAllowedHeaders(java.util.List.of("Authorization","Content-Type","X-Requested-With"));
+    c.setExposedHeaders(java.util.List.of("Authorization","Set-Cookie"));
+    c.setAllowCredentials(true);
+    c.setMaxAge(3600L);
+    var src = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
+    src.registerCorsConfiguration("/**", c);
+    return src;
   }
 }
 
