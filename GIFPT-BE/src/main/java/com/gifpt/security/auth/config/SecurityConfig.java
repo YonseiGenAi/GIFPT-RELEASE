@@ -59,7 +59,8 @@ public class SecurityConfig {
         ).permitAll()
         .anyRequest().authenticated()
       )
-      .httpBasic(Customizer.withDefaults())
+      .httpBasic(basic -> basic.disable())
+      .formLogin(form -> form.disable())
       .authenticationProvider(authenticationProvider())
       .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
