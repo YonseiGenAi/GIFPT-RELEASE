@@ -28,9 +28,7 @@ public class WorkspaceService {
     private final WorkspaceRepository workspaceRepository;
     private final AnalysisJobRepository analysisJobRepository;
     private final UserRepository userRepository;
-
-    // Django로 분석 요청 보낼 HTTP 클라이언트 (기존에 쓰던 거 있으면 그걸 써도 됨)
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
 
     @Value("${gifpt.upload-dir}")
     private String uploadDir;
