@@ -1,5 +1,5 @@
 package com.gifpt.analysis.domain;
 
-public enum JobStatus {
+public enum AnalysisStatus {
   PENDING, RUNNING, SUCCESS, FAILED
 }

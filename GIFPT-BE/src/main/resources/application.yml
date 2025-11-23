@@ -26,6 +26,9 @@ logging:
 
 gifpt:
   jwt:
+    secret: ${JWT_SECRET:default-secret-key-for-development-only-change-in-production-min-256-bits}
+    expires-in-ms: 3600000           # 1시간
+    refresh-expires-in-ms: 1209600000  # 14일
     issuer: gifpt
     header: Authorization       # 액세스 토큰을 담는 헤더
     prefix: Bearer              # "Bearer <token>"
@@ -38,3 +41,6 @@ gifpt:
         name: refresh_token
         same-site: Lax
         http-only: true
+  s3:
+    bucket: gifpt-s3          # 👉 실제 버킷 이름
+    base-url: https://gifpt-s3.s3.ap-northeast-2.amazonaws.com

@@ -20,7 +20,7 @@ public class AnalysisJob {
   private UploadFile uploadedFile;
 
   @Enumerated(EnumType.STRING)
-  private JobStatus status;
+  private AnalysisStatus status;
 
   @Column(length = 4000)
   private String prompt;      // 사용자가 입력한 프롬프트
