@@ -44,3 +44,6 @@ gifpt:
   s3:
     bucket: gifpt-s3          # 👉 실제 버킷 이름
     base-url: https://gifpt-s3.s3.ap-northeast-2.amazonaws.com
+  upload-dir: ${GIFPT_UPLOAD_DIR:./uploads}
+  ai-server:
+    base-url: ${GIFPT_AI_SERVER_BASE_URL:http://localhost:8000}

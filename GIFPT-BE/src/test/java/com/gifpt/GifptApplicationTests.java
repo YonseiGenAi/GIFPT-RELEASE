@@ -13,7 +13,9 @@ import org.springframework.test.context.TestPropertySource;
 	"gifpt.jwt.secret=test-secret-key-for-testing-only-must-be-at-least-256-bits-long-for-hmac-sha",
 	"gifpt.jwt.expires-in-ms=3600000",
 	"openai.api.key=test-key",
-	"gifpt.ai.base-url=http://localhost:8000"
+	"gifpt.ai.base-url=http://localhost:8000",
+	"gifpt.upload-dir=./test-uploads",
+	"gifpt.ai-server.base-url=http://localhost:8000"
 })
 class GifptApplicationTests {
 
