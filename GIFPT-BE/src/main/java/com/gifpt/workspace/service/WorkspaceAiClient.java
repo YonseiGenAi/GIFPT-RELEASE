@@ -7,24 +7,32 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Component
 @RequiredArgsConstructor
 public class WorkspaceAiClient {
 
     private final RestClient restClient;
 
-    @Value("${gifpt.ai.base-url:http://django:8000}")
-    private String aiBaseUrl;
+    public WorkspaceAiClient(
+            RestClient.Builder builder,
+            @Value("${gifpt.ai.base-url:http://django:8000}") String aiBaseUrl
+    ) {
+        this.restClient = builder
+                .baseUrl(aiBaseUrl)
+                .build();
+    }
 
     public void requestAnalysis(AnalysisJob job) {
-        // Django 쪽에서 기대하는 payload 형식에 맞게 작성
-        var body = new java.util.HashMap<String, Object>();
+        Map<String, Object> body = new HashMap<>();
         body.put("jobId", job.getId());
         body.put("filePath", job.getUploadedFile().getS3Url());
         body.put("prompt", job.getPrompt());
 
         restClient.post()
-                .uri(aiBaseUrl + "/studio/analyze")  // 예시
+                .uri("/studio/analyze")   // baseUrl + 이 path
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .retrieve()
