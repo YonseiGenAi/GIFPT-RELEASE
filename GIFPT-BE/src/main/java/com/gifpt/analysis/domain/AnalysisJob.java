@@ -1,6 +1,6 @@
 package com.gifpt.analysis.domain;
 
-import com.gifpt.user.domain.User;
+import com.gifpt.file.domain.UploadFile;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -11,34 +11,32 @@ import java.time.Instant;
 @NoArgsConstructor @AllArgsConstructor @Builder
 @Table(name = "analysis_jobs")
 public class AnalysisJob {
-
   @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  @ManyToOne(fetch = FetchType.LAZY) // 선택: 누가 올렸는지
-  @JoinColumn(name = "user_id")
-  private User user;
+  private Long userId;
 
-  @Column(nullable = false)
-  private String fileName;         // 업로드된 원본 파일명
+  @ManyToOne(fetch = FetchType.LAZY)
+  private UploadFile uploadedFile;
 
-  @Column(nullable = false)
-  private String filePath;         // 로컬 경로나 S3 URL
-  
-  @Builder.Default
   @Enumerated(EnumType.STRING)
-  @Column(nullable = false)
-  private JobStatus status = JobStatus.PENDING;
+  private JobStatus status;
 
-  private String resultUrl;        // 생성된 GIF/MP4 저장 위치
-  @Column(length = 2000)
-  private String summary;          // 요약/설명 텍스트
-  @Column(length = 2000)
-  private String errorMessage;     // 실패 시 에러 메시지
+  @Column(length = 4000)
+  private String prompt;      // 사용자가 입력한 프롬프트
 
-  @Builder.Default
-  private Instant createdAt = Instant.now();
-  
-  private Instant startedAt;
-  private Instant finishedAt;
+  @Column(length = 8000)
+  private String summary;     // Django worker가 반환한 핵심 요약
+
+  private String resultUrl;   // 생성된 영상 URL
+
+  @Lob
+  private String pdfText;     // PDF 전체 텍스트 (있으면 chat에 사용)
+
+  private String errorMessage; // 에러 메시지
+
+  private Instant startedAt;   // 작업 시작 시간
+  private Instant finishedAt;  // 작업 완료 시간
+  private Instant createdAt;
+  private Instant updatedAt;
 }
