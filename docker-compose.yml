@@ -29,6 +29,10 @@ services:
       GIFPT_UPLOAD_DIR: /data/uploads
       GIFPT_RESULT_DIR: /data/results
       GIFPT_JWT_SECRET: change_me_very_long_64bytes
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ap-northeast-2
+      GIFPT_S3_BUCKET: gifpt-s3
     volumes:
       - ./shared/uploads:/data/uploads
       - ./shared/results:/data/results

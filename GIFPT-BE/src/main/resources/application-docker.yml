@@ -44,6 +44,9 @@ gifpt:
         same-site: None
         http-only: true
         secure: true
+  s3:
+    bucket: gifpt-s3
+    base-url: https://gifpt-s3.s3.ap-northeast-2.amazonaws.com
 
 springdoc:
   api-docs:

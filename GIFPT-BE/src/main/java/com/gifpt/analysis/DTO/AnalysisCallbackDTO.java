@@ -1,9 +1,9 @@
-package com.gifpt.analysis.DTO;
+package com.gifpt.analysis.dto;
 
-import com.gifpt.analysis.domain.JobStatus;
+import com.gifpt.analysis.domain.AnalysisStatus;
 
 public record AnalysisCallbackDTO(
-    JobStatus status,
+    AnalysisStatus status,
     String resultUrl,
     String summary,
     String errorMessage
