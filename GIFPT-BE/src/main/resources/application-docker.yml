@@ -51,6 +51,8 @@ gifpt:
   s3:
     bucket: gifpt-s3
     base-url: https://gifpt-s3.s3.ap-northeast-2.amazonaws.com
+  ai-server:
+    base-url: ${GIFPT_AI_SERVER_BASE_URL:http://django:8000}
 
 springdoc:
   api-docs:
