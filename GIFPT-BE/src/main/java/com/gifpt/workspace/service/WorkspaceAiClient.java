@@ -35,7 +35,7 @@ public class WorkspaceAiClient {
         body.put("prompt", job.getPrompt());
 
         restClient.post()
-                .uri("/studio/analyze")   // baseUrl + 이 path
+                .uri("/analyze")   // baseUrl + 이 path
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .retrieve()

@@ -79,7 +79,7 @@ public class WorkspaceService {
         );
 
         restClient.post()
-                .uri("/api/worker/analyze")  // base-url + path
+                .uri("/analyze")  // base-url + path
                 .body(requestBody)
                 .retrieve()
                 .toBodilessEntity();
@@ -205,7 +205,7 @@ public class WorkspaceService {
         );
 
         restClient.post()
-                .uri("/api/worker/analyze")
+                .uri("/analyze")
                 .body(requestBody)
                 .retrieve()
                 .toBodilessEntity();
