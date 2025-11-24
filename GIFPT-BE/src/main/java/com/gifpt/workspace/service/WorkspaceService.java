@@ -73,8 +73,8 @@ public class WorkspaceService {
 
         // Django /worker 쪽에 분석 요청
         var requestBody = java.util.Map.of(
-                "jobId", job.getId(),
-                "inputPath", storedPdfPath,
+                "job_id", job.getId(),
+                "file_path", storedPdfPath,
                 "prompt", prompt
         );
 
@@ -198,9 +198,9 @@ public class WorkspaceService {
                 .build();
 
         var requestBody = java.util.Map.of(
-                "jobId", job.getId(),
+                "job_id", job.getId(),
                 // 🔥 UploadFile 엔티티의 경로 필드 이름에 맞게 수정해야 함
-                "inputPath", file.getS3Url(),      // 예: getPath(), getStoredPath() 등
+                "file_path", file.getS3Url(),      // 예: getPath(), getStoredPath() 등
                 "prompt", userPrompt
         );
 
