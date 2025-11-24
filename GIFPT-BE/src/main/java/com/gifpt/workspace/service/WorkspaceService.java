@@ -80,6 +80,7 @@ public class WorkspaceService {
 
         restClient.post()
                 .uri("/analyze")  // base-url + path
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .body(requestBody)
                 .retrieve()
                 .toBodilessEntity();
@@ -206,6 +207,7 @@ public class WorkspaceService {
 
         restClient.post()
                 .uri("/analyze")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .body(requestBody)
                 .retrieve()
                 .toBodilessEntity();
