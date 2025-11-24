@@ -30,8 +30,8 @@ public class WorkspaceAiClient {
                 .build();
 
         Map<String, Object> body = new HashMap<>();
-        body.put("jobId", job.getId());
-        body.put("filePath", job.getUploadedFile().getS3Url());
+        body.put("job_id", job.getId());
+        body.put("file_path", job.getUploadedFile().getS3Url());
         body.put("prompt", job.getPrompt());
 
         restClient.post()
