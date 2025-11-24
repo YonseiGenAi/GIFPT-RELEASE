@@ -22,6 +22,11 @@ spring:
         default_batch_fetch_size: 100
         query:
           in_clause_parameter_padding: true
+  
+  servlet:
+    multipart:
+      max-file-size: 50MB       # 업로드 가능한 파일 최대 크기
+      max-request-size: 50MB
 
 server:
   port: 8080

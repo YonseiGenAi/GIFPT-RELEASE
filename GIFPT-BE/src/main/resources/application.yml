@@ -42,6 +42,12 @@ gifpt:
         name: refresh_token
         same-site: Lax
         http-only: true
+  
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+  
   s3:
     bucket: gifpt-s3          # 👉 실제 버킷 이름
     base-url: https://gifpt-s3.s3.ap-northeast-2.amazonaws.com
