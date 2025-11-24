@@ -8,7 +8,6 @@ spring:
     properties:
       hibernate:
         format_sql: true
-        # show_sql은 로거로 대체 (아래 logging 설정)
     defer-datasource-initialization: false
   sql:
     init:
@@ -28,7 +27,7 @@ logging:
 
 gifpt:
   jwt:
-    secret: ${JWT_SECRET:default-secret-key-for-development-only-change-in-production-min-256-bits}
+    secret: ${GIFPT_JWT_SECRET}
     expires-in-ms: 3600000           # 1시간
     refresh-expires-in-ms: 1209600000  # 14일
     issuer: gifpt
@@ -46,9 +45,9 @@ gifpt:
   s3:
     bucket: gifpt-s3          # 👉 실제 버킷 이름
     base-url: https://gifpt-s3.s3.ap-northeast-2.amazonaws.com
-  upload-dir: ${GIFPT_UPLOAD_DIR:./uploads}
+  upload-dir: ${GIFPT_UPLOAD_DIR:/data/uploads}
   ai-server:
-    base-url: ${GIFPT_AI_SERVER_BASE_URL:http://localhost:8000}
+    base-url: ${GIFPT_AI_SERVER_BASE_URL:http://django:8000}
 
 openai:
   api:

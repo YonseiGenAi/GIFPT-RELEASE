@@ -1,6 +1,5 @@
 package com.gifpt.workspace.service;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -10,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-@RequiredArgsConstructor
 public class WorkspaceChatAiClient {
 
     private final RestClient restClient;
@@ -20,6 +18,12 @@ public class WorkspaceChatAiClient {
 
     @Value("${openai.model:gpt-4o}")
     private String model;
+
+    // ⚠️ RestClient.Builder 를 주입받아서 우리가 직접 RestClient 생성
+    public WorkspaceChatAiClient(RestClient.Builder builder) {
+        // baseUrl은 외부 HTTPS를 직접 쓰니까 굳이 지정 안 함
+        this.restClient = builder.build();
+    }
 
     public String askWithContext(String userPrompt,
                                  String summary,
@@ -36,10 +40,12 @@ public class WorkspaceChatAiClient {
                 %s
 
                 Use these as context and answer the student's question clearly and concisely.
-                """.formatted(summary != null ? summary : "(no summary yet)",
-                              userPrompt != null ? userPrompt : "(no prompt)");
+                """.formatted(
+                summary != null ? summary : "(no summary yet)",
+                userPrompt != null ? userPrompt : "(no prompt)"
+        );
 
-        // 필요하다면 pdfText도 토막내서 붙이기
+        // 필요하다면 pdfText도 잘라서 messages에 추가할 수 있음
 
         var body = Map.of(
                 "model", model,

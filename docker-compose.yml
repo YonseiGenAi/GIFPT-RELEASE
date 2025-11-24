@@ -1,43 +1,32 @@
-version: "3.9"
-
 services:
   redis:
     image: redis:7
     ports: ["6379:6379"]
     restart: unless-stopped
 
-  mysql:
-    image: mysql:8.0
-    ports: ["3306:3306"]
-    environment:
-      MYSQL_DATABASE: gifpt
-      MYSQL_USER: gifpt
-      MYSQL_PASSWORD: gifpt_pw
-      MYSQL_ROOT_PASSWORD: change_root_pw
-    command: ["mysqld","--character-set-server=utf8mb4","--collation-server=utf8mb4_unicode_ci"]
-    volumes:
-      - ./data/mysql:/var/lib/mysql
-    restart: unless-stopped
-
   spring:
     build: ./spring
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/gifpt?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
-      SPRING_DATASOURCE_USERNAME: gifpt
-      SPRING_DATASOURCE_PASSWORD: gifpt_pw
+      SPRING_DATASOURCE_URL: jdbc:mysql://gifpt-database.c8lmgecqk6vk.us-east-1.rds.amazonaws.com:3306/gifpt-database?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=utf8&serverTimezone=Asia/Seoul
+      SPRING_DATASOURCE_USERNAME: ${DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+
       GIFPT_UPLOAD_DIR: /data/uploads
       GIFPT_RESULT_DIR: /data/results
-      GIFPT_JWT_SECRET: change_me_very_long_64bytes
+
+      GIFPT_JWT_SECRET: ${GIFPT_JWT_SECRET}
+
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ap-northeast-2
       GIFPT_S3_BUCKET: gifpt-s3
+
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
     volumes:
       - ./shared/uploads:/data/uploads
       - ./shared/results:/data/results
     ports: ["8080:8080"]
-    depends_on: [mysql]
     restart: unless-stopped
 
   django:
@@ -86,4 +75,3 @@ services:
       - ./nginx/certbot/www:/var/www/certbot
       - ./nginx/letsencrypt:/etc/letsencrypt
     restart: unless-stopped
-
