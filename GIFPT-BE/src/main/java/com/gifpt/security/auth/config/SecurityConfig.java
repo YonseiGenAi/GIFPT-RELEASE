@@ -52,11 +52,16 @@ public class SecurityConfig {
       .authorizeHttpRequests(auth -> auth
         .requestMatchers(
           "/healthz",
-          "/actuator/health", "/actuator/health/**",
-          "/v3/api-docs", "/v3/api-docs/**",
-          "/swagger-ui/**", "/swagger-ui.html",
-          "/api/v1/auth/**", "/api/v1/analysis/*/complete",
-          "/v1/auth/**"
+          "/actuator/health",
+          "/actuator/health/**",
+          "/v3/api-docs",
+          "/v3/api-docs/**",
+          "/swagger-ui/**",
+          "/swagger-ui.html",
+          "/api/v1/auth/**",
+          "/api/v1/analysis/*/complete",
+          "/v1/auth/**",
+          "/api/v1/workspaces/**"
         ).permitAll()
         .anyRequest().authenticated()
       )
