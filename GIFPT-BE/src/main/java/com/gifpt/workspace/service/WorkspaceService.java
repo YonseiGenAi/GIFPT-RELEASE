@@ -15,6 +15,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.client.RestClient;
+import com.gifpt.file.domain.UploadFile;
+import com.gifpt.file.repository.UploadedFileRepository;
+
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,6 +31,7 @@ public class WorkspaceService {
     private final WorkspaceRepository workspaceRepository;
     private final AnalysisJobRepository analysisJobRepository;
     private final UserRepository userRepository;
+    private final UploadedFileRepository uploadedFileRepository;
 
     private final RestClient.Builder restClientBuilder;
 
@@ -166,4 +170,59 @@ public class WorkspaceService {
                 ws.getUpdatedAt()
         );
     }
+
+    public WorkspaceResponse createWorkspaceFromUploadedFile(
+        CustomUserPrincipal principal,
+        Long fileId,
+        String title,
+        String userPrompt
+        ) throws IOException {
+
+        // 1) 워크스페이스 owner 조회
+        User owner = userRepository.findById(principal.getId())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        // 2) 업로드된 파일 엔티티 조회
+        UploadFile file = uploadedFileRepository.findById(fileId)
+                .orElseThrow(() -> new IllegalArgumentException("파일을 찾을 수 없습니다. id=" + fileId));
+
+        // 3) 분석 Job 생성
+        AnalysisJob job = AnalysisJob.builder()
+                .status(AnalysisStatus.PENDING)
+                .build();
+        analysisJobRepository.save(job);
+
+        // 4) Django 워커에 분석 요청
+        RestClient restClient = restClientBuilder
+                .baseUrl(aiServerBaseUrl)   // 예: http://django:8000
+                .build();
+
+        var requestBody = java.util.Map.of(
+                "jobId", job.getId(),
+                // 🔥 UploadFile 엔티티의 경로 필드 이름에 맞게 수정해야 함
+                "inputPath", file.getS3Url(),      // 예: getPath(), getStoredPath() 등
+                "prompt", userPrompt
+        );
+
+        restClient.post()
+                .uri("/api/worker/analyze")
+                .body(requestBody)
+                .retrieve()
+                .toBodilessEntity();
+
+        // 5) Workspace 생성
+        Workspace workspace = Workspace.builder()
+                .owner(owner)
+                .title(title)
+                .prompt(userPrompt)
+                .pdfPath(file.getS3Url())          // 위와 동일하게 경로 필드 맞춰 줄 것
+                .analysisJob(job)
+                .status(Workspace.WorkspaceStatus.PENDING)
+                .build();
+
+        workspaceRepository.save(workspace);
+
+        // 6) DTO로 변환해서 리턴
+        return toDto(workspace);
+        }
 }
