@@ -23,7 +23,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class WorkspaceService {
@@ -204,6 +206,8 @@ public class WorkspaceService {
                 "file_path", file.getS3Url(),      // 예: getPath(), getStoredPath() 등
                 "prompt", userPrompt
         );
+
+        log.info("🔥 [Spring→Django] POST {}/analyze body={}", aiServerBaseUrl, requestBody);
 
         restClient.post()
                 .uri("/analyze")
