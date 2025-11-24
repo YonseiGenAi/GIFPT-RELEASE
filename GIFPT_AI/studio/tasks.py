@@ -32,7 +32,7 @@ def extract_text_from_pdf(path: str) -> str:
 
 
 @shared_task(name="studio.analyze_pdf_prompt")
-def analyze_pdf_prompt(job_id: int, input_path: str, user_prompt: str):
+def analyze_pdf_prompt(job_id: int, file_path: str, user_prompt: str):
     """
     - jobId, pdf 경로, 사용자 프롬프트를 받아서
     - PDF 텍스트 추출
@@ -40,13 +40,13 @@ def analyze_pdf_prompt(job_id: int, input_path: str, user_prompt: str):
     - (TODO) 알고리즘 시각화 파이프라인 실행 → 영상 파일 생성
     - Spring /api/v1/analysis/{jobId}/complete 로 콜백
     """
-    logger.info("analyze_pdf_prompt started job_id=%s input_path=%s", job_id, input_path)
+    logger.info("analyze_pdf_prompt started job_id=%s input_path=%s", job_id, file_path)
 
     # input_path가 절대경로가 아니면 UPLOAD_DIR 기준으로 합쳐줌
-    if not os.path.isabs(input_path):
-        pdf_path = os.path.join(UPLOAD_DIR, input_path)
+    if not os.path.isabs(file_path):
+        pdf_path = os.path.join(UPLOAD_DIR, file_path)
     else:
-        pdf_path = input_path
+        pdf_path = file_path
 
     try:
         # 1) PDF 텍스트 추출
