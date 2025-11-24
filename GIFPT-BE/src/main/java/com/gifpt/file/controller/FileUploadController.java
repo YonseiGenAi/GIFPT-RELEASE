@@ -54,6 +54,7 @@ public class FileUploadController {
     repo.save(uploaded);
 
     return ResponseEntity.ok(Map.of(
+        "fileId", uploaded.getId(),
         "message", "uploaded successfully",
         "fileName", fileName,
         "path", filePath.toString()
