@@ -210,10 +210,13 @@ public class WorkspaceService {
         log.info("🔥 [Spring→Django] POST {}/analyze body={}", aiServerBaseUrl, requestBody);
 
         restClient.post()
-                .uri("/analyze")
-                .contentType(MediaType.APPLICATION_JSON)
+                .uri(uriBuilder -> uriBuilder
+                        .path("/analyze")
+                        .queryParam("job_id", job.getId())
+                        .queryParam("file_path", file.getS3Url())
+                        .queryParam("prompt", userPrompt)
+                        .build())
                 .accept(MediaType.APPLICATION_JSON)
-                .body(requestBody)
                 .retrieve()
                 .toBodilessEntity();
 
@@ -222,7 +225,7 @@ public class WorkspaceService {
                 .owner(owner)
                 .title(title)
                 .prompt(userPrompt)
-                .pdfPath(file.getS3Url())          // 위와 동일하게 경로 필드 맞춰 줄 것
+                .pdfPath(file.getS3Url())
                 .analysisJob(job)
                 .status(Workspace.WorkspaceStatus.PENDING)
                 .build();

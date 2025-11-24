@@ -26,28 +26,35 @@ def get_openai_client():
 
 @api_view(['POST'])
 def analyze(request):
-    # 1) 들어온 요청 상태를 싹 다 찍어보자
     logger.error("🔥 [Django] /analyze called")
     logger.error("🔥 RAW BODY = %r", request.body)
     logger.error("🔥 CONTENT_TYPE = %s", request.content_type)
     logger.error("🔥 DRF PARSED DATA (request.data) = %s", getattr(request, "data", None))
 
-    # 2) 우선 DRF가 파싱한 데이터 사용
     data = getattr(request, "data", {}) or {}
 
-    # 3) 만약 비어 있으면 raw body를 직접 JSON으로 파싱 시도
-    if not data:
+    # 1) body 비어 있으면 raw body 수동 파싱
+    if not data and request.body:
         try:
-            raw = request.body.decode("utf-8") if request.body else ""
+            raw = request.body.decode("utf-8")
             logger.error("🔥 Trying manual json.loads from raw body: %r", raw)
-            if raw:
-                data = json.loads(raw)
-                logger.error("🔥 Manual parsed data = %s", data)
+            data = json.loads(raw)
+            logger.error("🔥 Manual parsed data = %s", data)
         except Exception as e:
             logger.error("🔥 Manual JSON parse failed: %s", e)
 
+    # 2) 여전히 비어 있으면 query string 에서 가져오기 (Spring이 ?job_id=.. 로 보낼 때용)
+    if not data:
+        q = request.query_params
+        data = {
+            "job_id": q.get("job_id"),
+            "file_path": q.get("file_path"),
+            "prompt": q.get("prompt"),
+        }
+        logger.error("🔥 Fallback from query_params = %s", data)
+
     required = ["job_id", "file_path", "prompt"]
-    missing = [f for f in required if f not in data]
+    missing = [f for f in required if not data.get(f)]
 
     if missing:
         logger.error("🔥 Missing fields: %s, received_data=%s", missing, data)
@@ -60,9 +67,17 @@ def analyze(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # 4) 여기까지 왔으면 정상적으로 값이 들어온 것
+    # 타입 정리 (job_id를 int로)
+    try:
+        job_id = int(data["job_id"])
+    except ValueError:
+        return Response(
+            {"error": "invalid_job_id", "received": data["job_id"]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     task = analyze_pdf_prompt.delay(
-        job_id=data["job_id"],
+        job_id=job_id,
         file_path=data["file_path"],
         prompt=data["prompt"],
     )
