@@ -73,6 +73,7 @@ services:
     depends_on:
       - redis
       - django
+      - rabbitmq
     restart: unless-stopped
     command: celery -A GIFPT_AI worker -l info -Q gifpt.default
 
