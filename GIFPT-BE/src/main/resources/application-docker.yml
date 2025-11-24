@@ -1,9 +1,8 @@
 spring:
   datasource:
-    # docker-compose의 mysql 서비스명이 'mysql'일 때
-    url: jdbc:mysql://mysql:3306/gifpt?useSSL=false&serverTimezone=UTC&characterEncoding=utf8&allowPublicKeyRetrieval=true&useUnicode=true
-    username: ${DB_USER:gifpt}
-    password: ${DB_PASS:gifpt_pw}
+    url: jdbc:mysql://gifpt-database.c8lmgecqk6vk.us-east-1.rds.amazonaws.com:3306/gifpt-database?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=utf8&allowPublicKeyRetrieval=true&useUnicode=true
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
@@ -36,7 +35,7 @@ logging:
 
 gifpt:
   jwt:
-    secret: ${JWT_SECRET:weorifjqwiodfgjoiwjfqoiwjfoiwjeqdiognwqifnoiwqndfiojojqvbner}       # 반드시 주입
+    secret: ${GIFPT_JWT_SECRET}       # 반드시 주입
     expires-in-ms: 3600000         # 1시간
     refresh-expires-in-ms: 1209600000  # 14일
     refresh-token:

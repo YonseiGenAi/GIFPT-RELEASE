@@ -28,7 +28,8 @@ public class WorkspaceService {
     private final WorkspaceRepository workspaceRepository;
     private final AnalysisJobRepository analysisJobRepository;
     private final UserRepository userRepository;
-    private final RestClient restClient;
+
+    private final RestClient.Builder restClientBuilder;
 
     @Value("${gifpt.upload-dir}")
     private String uploadDir;
@@ -61,8 +62,12 @@ public class WorkspaceService {
 
         analysisJobRepository.save(job);
 
-        // 2-1) Django /worker 쪽에 분석 요청 (기존에 쓰던 요청 포맷으로 맞춰야 함)
-        // 여기서는 예시로 작성
+        // 2-1) RestClient 생성 (Builder 사용)
+        RestClient restClient = restClientBuilder
+                .baseUrl(aiServerBaseUrl)   // 예: http://django:8000
+                .build();
+
+        // Django /worker 쪽에 분석 요청
         var requestBody = java.util.Map.of(
                 "jobId", job.getId(),
                 "inputPath", storedPdfPath,
@@ -70,7 +75,7 @@ public class WorkspaceService {
         );
 
         restClient.post()
-                .uri(aiServerBaseUrl + "/api/worker/analyze")
+                .uri("/api/worker/analyze")  // base-url + path
                 .body(requestBody)
                 .retrieve()
                 .toBodilessEntity();
