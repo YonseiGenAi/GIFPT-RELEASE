@@ -5,6 +5,7 @@ from rest_framework import status
 from celery.result import AsyncResult
 from django.conf import settings
 import os
+import json
 
 from .serializers import AnalyzeRequestSerializer, ChatRequestSerializer
 from .tasks import analyze_pdf_prompt
@@ -22,8 +23,33 @@ def get_openai_client():
 
 @api_view(['POST'])
 def analyze(request):
-    ser = AnalyzeRequestSerializer(data=request.data)
+    """
+    Spring에서 오는 JSON이 content-type 때문에 DRF가 제대로 파싱 못 하는 경우를 대비해서
+    request.data가 비어 있으면 request.body로 한 번 더 JSON 파싱 시도.
+    """
+    # 🔥 1차 시도: DRF가 파싱한 data
+    data = request.data
+
+    # 디버깅용 로그 (원하면 잠깐 넣어도 됨)
+    # print("DEBUG analyze request.data =", data)
+
+    # 🔥 만약 data가 비어있으면, raw body로 직접 JSON 파싱 시도
+    if not data:
+        try:
+            raw = request.body.decode("utf-8")
+            if raw.strip():
+                data = json.loads(raw)
+            else:
+                data = {}
+        except Exception as e:
+            # JSON 파싱 실패하면 그냥 빈 dict
+            data = {}
+
+    # 🔥 이제 이 data를 가지고 serializer 검증
+    ser = AnalyzeRequestSerializer(data=data)
     ser.is_valid(raise_exception=True)
+
+    # Celery task 호출
     task = analyze_pdf_prompt.delay(**ser.validated_data)
     return Response({"task_id": task.id, "status": "QUEUED"}, status=status.HTTP_202_ACCEPTED)
 
