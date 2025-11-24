@@ -48,4 +48,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
     chain.doFilter(req, res);
   }
+  
+  @Override
+  protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
+      // 공개/예외 경로는 필터 스킵
+      String p = request.getRequestURI();
+      return p.startsWith("/healthz")
+          || p.startsWith("/swagger-ui")
+          || p.startsWith("/v3/api-docs")
+          || p.startsWith("/api/v1/auth/login")
+          || p.startsWith("/api/v1/auth/refresh");
+  }
 }
