@@ -32,7 +32,7 @@ def extract_text_from_pdf(path: str) -> str:
 
 
 @shared_task(name="studio.analyze_pdf_prompt")
-def analyze_pdf_prompt(job_id: int, file_path: str, user_prompt: str):
+def analyze_pdf_prompt(job_id: int, file_path: str, prompt: str):
     """
     - jobId, pdf 경로, 사용자 프롬프트를 받아서
     - PDF 텍스트 추출
@@ -71,7 +71,7 @@ def analyze_pdf_prompt(job_id: int, file_path: str, user_prompt: str):
         """)
 
         user_content = f"""[사용자 프롬프트]
-{user_prompt}
+{prompt}
 
 [PDF 내용 일부]
 {pdf_text[:12000]}"""
