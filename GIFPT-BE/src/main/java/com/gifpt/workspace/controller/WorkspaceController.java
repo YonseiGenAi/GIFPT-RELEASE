@@ -2,12 +2,14 @@ package com.gifpt.workspace.controller;
 
 import com.gifpt.security.auth.user.CustomUserPrincipal;
 import com.gifpt.workspace.dto.WorkspaceResponse;
+import com.gifpt.workspace.dto.WorkspaceCreateFromFileRequest;
 import com.gifpt.workspace.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.MediaType;
 
 @RestController
 @RequestMapping("/api/v1/workspaces")
@@ -16,21 +18,30 @@ public class WorkspaceController {
 
     private final WorkspaceService workspaceService;
 
-    /**
-     * Create My Project 버튼 눌렀을 때 호출:
-     * - multipart/form-data:
-     *   - title: 문자열
-     *   - prompt: 문자열
-     *   - pdf: 파일
-     */
-    @PostMapping(consumes = {"multipart/form-data"})
-    public ResponseEntity<WorkspaceResponse> createWorkspace(
+    // ✅ 1) 기존: 프론트에서 바로 PDF 업로드하는 버전 (multipart/form-data)
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<WorkspaceResponse> createWorkspaceWithPdf(
             @AuthenticationPrincipal CustomUserPrincipal user,
             @RequestPart("title") String title,
             @RequestPart("prompt") String prompt,
             @RequestPart("pdf") MultipartFile pdf
     ) throws Exception {
         WorkspaceResponse resp = workspaceService.createWorkspace(user, title, prompt, pdf);
+        return ResponseEntity.ok(resp);
+    }
+
+    // ✅ 2) 새로 추가: 이미 업로드된 fileId를 사용하는 JSON 버전
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<WorkspaceResponse> createWorkspaceFromUploadedFile(
+            @AuthenticationPrincipal CustomUserPrincipal user,
+            @RequestBody WorkspaceCreateFromFileRequest request
+    ) throws Exception {
+        WorkspaceResponse resp = workspaceService.createWorkspaceFromUploadedFile(
+                user,
+                request.fileId(),
+                request.title(),
+                request.userPrompt()
+        );
         return ResponseEntity.ok(resp);
     }
 
