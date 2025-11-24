@@ -1,13 +1,16 @@
 services:
   redis:
     image: redis:7
-    ports: ["6379:6379"]
+    container_name: gifpt-redis
+    ports:
+      - "6379:6379"
     restart: unless-stopped
 
   spring:
-    build: ./spring
+    image: ehho/gifpt-spring:latest   # ✅ GitHub Actions가 밀어준 이미지 사용
     environment:
       SPRING_PROFILES_ACTIVE: docker
+
       SPRING_DATASOURCE_URL: jdbc:mysql://gifpt-database.c8lmgecqk6vk.us-east-1.rds.amazonaws.com:3306/gifpt-database?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=utf8&serverTimezone=Asia/Seoul
       SPRING_DATASOURCE_USERNAME: ${DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
@@ -23,14 +26,18 @@ services:
       GIFPT_S3_BUCKET: gifpt-s3
 
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+
     volumes:
       - ./shared/uploads:/data/uploads
       - ./shared/results:/data/results
-    ports: ["8080:8080"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
     restart: unless-stopped
 
   django:
-    build: ./GIFPT_AI
+    image: ehho/gifpt-django:latest   # ✅ AI 웹 서버
     environment:
       DJANGO_DEBUG: "0"
       REDIS_URL: redis://redis:6379/0
@@ -42,13 +49,15 @@ services:
     volumes:
       - ./shared/uploads:/data/uploads
       - ./shared/results:/data/results
-    depends_on: [redis]
-    ports: ["8000:8000"]
+    depends_on:
+      - redis
+    ports:
+      - "8000:8000"
     restart: unless-stopped
     command: bash -lc "python manage.py migrate && gunicorn GIFPT_AI.wsgi:application --bind 0.0.0.0:8000"
 
   worker:
-    build: ./GIFPT_AI
+    image: ehho/gifpt-worker:latest   # ✅ Celery 워커도 허브 이미지 사용
     environment:
       REDIS_URL: redis://redis:6379/0
       SPRING_CALLBACK_BASE: http://spring:8080
@@ -59,14 +68,17 @@ services:
     volumes:
       - ./shared/uploads:/data/uploads
       - ./shared/results:/data/results
-    depends_on: [redis, django]
+    depends_on:
+      - redis
+      - django
     restart: unless-stopped
     command: celery -A GIFPT_AI worker -l info -Q gifpt.default
 
   nginx:
     image: nginx:1.27-alpine
     container_name: gifpt-server-nginx
-    depends_on: [spring]
+    depends_on:
+      - spring
     ports:
       - "80:80"
       - "443:443"
