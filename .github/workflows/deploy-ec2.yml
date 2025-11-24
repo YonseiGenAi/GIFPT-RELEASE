@@ -39,15 +39,23 @@ jobs:
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             docker compose pull
             docker compose up -d --remove-orphans
-            for i in $(seq 1 60); do
-              if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 || \
-                 curl -fsS http://localhost:8000/        >/dev/null 2>&1; then
-                echo "Services are responding"
+
+            # ---- 여기부터 헬스체크 로직 ----
+            success=false
+            for i in $(seq 1 30); do
+              if curl -fsS http://localhost/healthz >/dev/null 2>&1; then
+                echo "App is healthy via nginx (:80/healthz)"
+                success=true
                 break
               fi
-              echo "Waiting services... ($i)"
+              echo "Waiting app... ($i)"
               sleep 2
             done
+
+            if [ "$success" != "true" ]; then
+              echo "WARNING: App did not become healthy in time, continuing anyway"
+            fi
+
             docker image prune -af || true
 
       - name: Print running containers
