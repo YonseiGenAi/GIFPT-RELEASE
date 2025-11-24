@@ -17,7 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.client.RestClient;
 import com.gifpt.file.domain.UploadFile;
 import com.gifpt.file.repository.UploadedFileRepository;
-
+import org.springframework.http.MediaType;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -211,7 +211,8 @@ public class WorkspaceService {
 
         restClient.post()
                 .uri("/analyze")
-                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
                 .body(requestBody)
                 .retrieve()
                 .toBodilessEntity();
