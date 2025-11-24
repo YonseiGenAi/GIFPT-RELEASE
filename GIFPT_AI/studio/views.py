@@ -26,35 +26,31 @@ def get_openai_client():
 
 @api_view(['POST'])
 def analyze(request):
-    # 1) raw body / request.data 찍어 보기
-    try:
-        raw_body = request.body.decode("utf-8")
-    except Exception:
-        raw_body = "<decode error>"
+    # 1) 들어온 요청 상태를 싹 다 찍어보자
+    logger.error("🔥 [Django] /analyze called")
+    logger.error("🔥 RAW BODY = %r", request.body)
+    logger.error("🔥 CONTENT_TYPE = %s", request.content_type)
+    logger.error("🔥 DRF PARSED DATA (request.data) = %s", getattr(request, "data", None))
 
-    logger.info(f"[analyze] raw_body = {raw_body!r}")
-    logger.info(f"[analyze] request.data = {request.data}")
+    # 2) 우선 DRF가 파싱한 데이터 사용
+    data = getattr(request, "data", {}) or {}
 
-    # 2) DRF가 파싱한 data 먼저 사용
-    data = request.data
-
-    # 3) data가 비어 있으면 raw_body에서 JSON 파싱 재시도
+    # 3) 만약 비어 있으면 raw body를 직접 JSON으로 파싱 시도
     if not data:
         try:
-            if raw_body.strip():
-                data = json.loads(raw_body)
-            else:
-                data = {}
+            raw = request.body.decode("utf-8") if request.body else ""
+            logger.error("🔥 Trying manual json.loads from raw body: %r", raw)
+            if raw:
+                data = json.loads(raw)
+                logger.error("🔥 Manual parsed data = %s", data)
         except Exception as e:
-            logger.error(f"[analyze] json.loads 실패: {e}")
-            data = {}
+            logger.error("🔥 Manual JSON parse failed: %s", e)
 
-    logger.info(f"[analyze] 최종 data = {data}")
+    required = ["job_id", "file_path", "prompt"]
+    missing = [f for f in required if f not in data]
 
-    # 4) 필수 필드 체크 (여기서 뭐가 들어오는지 먼저 확인)
-    missing = [k for k in ("job_id", "file_path", "prompt") if k not in data]
     if missing:
-        # 🔥 일단 여기서 바로 400을 주되, data를 그대로 응답해서 Spring 로그에서 볼 수 있게
+        logger.error("🔥 Missing fields: %s, received_data=%s", missing, data)
         return Response(
             {
                 "error": "missing_fields",
@@ -64,11 +60,12 @@ def analyze(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # 5) 이제 Serializer에 한 번 더 태워보기 (정상 흐름)
-    ser = AnalyzeRequestSerializer(data=data)
-    ser.is_valid(raise_exception=True)
-
-    task = analyze_pdf_prompt.delay(**ser.validated_data)
+    # 4) 여기까지 왔으면 정상적으로 값이 들어온 것
+    task = analyze_pdf_prompt.delay(
+        job_id=data["job_id"],
+        file_path=data["file_path"],
+        prompt=data["prompt"],
+    )
     return Response({"task_id": task.id, "status": "QUEUED"}, status=status.HTTP_202_ACCEPTED)
 
 @api_view(['GET'])
