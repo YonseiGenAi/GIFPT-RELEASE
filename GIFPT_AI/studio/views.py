@@ -6,10 +6,13 @@ from celery.result import AsyncResult
 from django.conf import settings
 import os
 import json
+import logging
 
 from .serializers import AnalyzeRequestSerializer, ChatRequestSerializer
 from .tasks import analyze_pdf_prompt
 from GIFPT_AI.celery import app as celery_app
+
+logger = logging.getLogger(__name__)
 
 def get_openai_client():
     """환경변수 기반으로 OpenAI 클라이언트를 지연 생성."""
@@ -23,33 +26,48 @@ def get_openai_client():
 
 @api_view(['POST'])
 def analyze(request):
-    """
-    Spring에서 오는 JSON이 content-type 때문에 DRF가 제대로 파싱 못 하는 경우를 대비해서
-    request.data가 비어 있으면 request.body로 한 번 더 JSON 파싱 시도.
-    """
-    # 🔥 1차 시도: DRF가 파싱한 data
+    # 1) raw body / request.data 찍어 보기
+    try:
+        raw_body = request.body.decode("utf-8")
+    except Exception:
+        raw_body = "<decode error>"
+
+    logger.info(f"[analyze] raw_body = {raw_body!r}")
+    logger.info(f"[analyze] request.data = {request.data}")
+
+    # 2) DRF가 파싱한 data 먼저 사용
     data = request.data
 
-    # 디버깅용 로그 (원하면 잠깐 넣어도 됨)
-    # print("DEBUG analyze request.data =", data)
-
-    # 🔥 만약 data가 비어있으면, raw body로 직접 JSON 파싱 시도
+    # 3) data가 비어 있으면 raw_body에서 JSON 파싱 재시도
     if not data:
         try:
-            raw = request.body.decode("utf-8")
-            if raw.strip():
-                data = json.loads(raw)
+            if raw_body.strip():
+                data = json.loads(raw_body)
             else:
                 data = {}
         except Exception as e:
-            # JSON 파싱 실패하면 그냥 빈 dict
+            logger.error(f"[analyze] json.loads 실패: {e}")
             data = {}
 
-    # 🔥 이제 이 data를 가지고 serializer 검증
+    logger.info(f"[analyze] 최종 data = {data}")
+
+    # 4) 필수 필드 체크 (여기서 뭐가 들어오는지 먼저 확인)
+    missing = [k for k in ("job_id", "file_path", "prompt") if k not in data]
+    if missing:
+        # 🔥 일단 여기서 바로 400을 주되, data를 그대로 응답해서 Spring 로그에서 볼 수 있게
+        return Response(
+            {
+                "error": "missing_fields",
+                "missing": missing,
+                "received_data": data,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 5) 이제 Serializer에 한 번 더 태워보기 (정상 흐름)
     ser = AnalyzeRequestSerializer(data=data)
     ser.is_valid(raise_exception=True)
 
-    # Celery task 호출
     task = analyze_pdf_prompt.delay(**ser.validated_data)
     return Response({"task_id": task.id, "status": "QUEUED"}, status=status.HTTP_202_ACCEPTED)
 
