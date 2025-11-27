@@ -31,7 +31,7 @@ public class WorkspaceController {
     }
 
     // ✅ 2) 새로 추가: 이미 업로드된 fileId를 사용하는 JSON 버전
-    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/from-file", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<WorkspaceResponse> createWorkspaceFromUploadedFile(
             @AuthenticationPrincipal CustomUserPrincipal user,
             @RequestBody WorkspaceCreateFromFileRequest request
