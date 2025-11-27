@@ -9,7 +9,7 @@ import json
 import logging
 
 from .serializers import AnalyzeRequestSerializer, ChatRequestSerializer
-from .tasks import analyze_pdf_prompt
+from .tasks import analyze_pdf_vision
 from GIFPT_AI.celery import app as celery_app
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ def analyze(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    task = analyze_pdf_prompt.delay(
+    task = analyze_pdf_vision.delay(
         job_id=job_id,
         file_path=data["file_path"],
         prompt=data["prompt"],
