@@ -90,16 +90,3 @@ services:
       - ./nginx/certbot/www:/var/www/certbot
       - ./nginx/letsencrypt:/etc/letsencrypt
     restart: unless-stopped
-
-  celery:
-    build: 
-    command: celery -A GIFPT_AI worker -l info
-    volumes:
-      - ./GIFPT_AI:/app
-    depends_on:
-      - django
-    environment:
-      - SPRING_CALLBACK_BASE=http://spring:8080
-      - OPENAI_API_KEY=xxxx
-      - GIFPT_UPLOAD_DIR=/data/uploads
-      - GIFPT_RESULT_DIR=/data/results

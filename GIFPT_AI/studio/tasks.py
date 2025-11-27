@@ -159,7 +159,15 @@ Return your response in JSON format:
             result['summary'] = result['summary'].replace('\n', ' ').strip()
         if 'video_instructions' in result:
             result['video_instructions'] = result['video_instructions'].replace('\n', ' ').strip()
-        
+        # 🔥 DEBUG LOG — Print summary + instructions
+        logger.info("==== OpenAI Summary BEGIN ====")
+        logger.info(result.get("summary", "NO SUMMARY"))
+        logger.info("==== OpenAI Summary END ====")
+
+        logger.info("==== OpenAI Video Instructions BEGIN ====")
+        logger.info(result.get("video_instructions", "NO INSTRUCTIONS"))
+        logger.info("==== OpenAI Video Instructions END ====")
+
         return result
     
     except Exception as e:
