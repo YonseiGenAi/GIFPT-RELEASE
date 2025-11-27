@@ -1,14 +1,18 @@
-# GIFPT_AI/studio/tasks.py
+# GIFPT_AI/studio/tasks_vision.py
 
 import os
 import logging
 import requests
+import base64
+import json
+from io import BytesIO
 
 from celery import shared_task
 from django.conf import settings
 
 from openai import OpenAI
-import PyPDF2
+import fitz  # PyMuPDF
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -19,96 +23,205 @@ RESULT_DIR = os.environ.get("GIFPT_RESULT_DIR", "/data/results")
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 
-def extract_text_from_pdf(path: str) -> str:
-    """간단 PDF 텍스트 추출 헬퍼"""
-    text_parts = []
-    with open(path, "rb") as f:
-        reader = PyPDF2.PdfReader(f)
-        for page in reader.pages:
-            t = page.extract_text()
-            if t:
-                text_parts.append(t)
-    return "\n\n".join(text_parts)
-
-
-@shared_task(name="studio.analyze_pdf_prompt")
-def analyze_pdf_prompt(job_id: int, file_path: str, prompt: str):
+def pdf_to_base64_images(pdf_path):
     """
-    - jobId, pdf 경로, 사용자 프롬프트를 받아서
-    - PDF 텍스트 추출
-    - OpenAI로 핵심 요약 생성
-    - (TODO) 알고리즘 시각화 파이프라인 실행 → 영상 파일 생성
-    - Spring /api/v1/analysis/{jobId}/complete 로 콜백
+    Convert PDF pages to base64 encoded images using PyMuPDF.
+    
+    Args:
+        pdf_path (str): Path to the PDF file
+        
+    Returns:
+        list: List of base64 encoded images
     """
-    logger.info("analyze_pdf_prompt started job_id=%s input_path=%s", job_id, file_path)
+    try:
+        logger.info(f"Converting PDF pages to images: {pdf_path}")
+        doc = fitz.open(pdf_path)
+        
+        base64_images = []
+        for page_num in range(len(doc)):
+            logger.info(f"Processing page {page_num + 1}/{len(doc)}")
+            page = doc[page_num]
+            
+            # Render page to an image (pixmap)
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better quality
+            
+            # Convert pixmap to PIL Image
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            
+            # Convert PIL Image to base64
+            buffered = BytesIO()
+            img.save(buffered, format="PNG")
+            img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+            base64_images.append(img_base64)
+        
+        doc.close()
+        return base64_images
+    
+    except Exception as e:
+        logger.error(f"Error converting PDF: {str(e)}")
+        return None
 
-    # input_path가 절대경로가 아니면 UPLOAD_DIR 기준으로 합쳐줌
+
+def generate_summary_from_images(base64_images, user_prompt=None):
+    """
+    Generate a summary from PDF images using OpenAI's vision model.
+    
+    Args:
+        base64_images (list): List of base64 encoded images
+        user_prompt (str): Optional user prompt with constraints for video generation
+        
+    Returns:
+        dict: Contains 'summary' and 'video_instructions'
+    """
+    try:
+        example_output = """Dijkstras algorithm is a method for finding the shortest path from a starting node to all other nodes in a weighted graph with non negative edge weights. It keeps track of the shortest known distance to each node and repeatedly selects the unvisited node with the smallest distance so far. From that node it relaxes each outgoing edge, meaning it checks whether going through that node gives a shorter route to its neighbors and updates their distances if so. This process continues until all nodes have been visited or all reachable nodes have their shortest distances finalized. For an example, imagine starting at node A in a graph where A connects to B with weight 4 and to C with weight 2. First set the distance to A as 0 and all others as infinity. The closest unvisited node is A, so visit it and update B to distance 4 and C to distance 2. Next the closest unvisited node is C with distance 2. From C, suppose there is an edge to D with weight 3. The new possible distance to D is 2 plus 3 equals 5, so set D to 5. Now the closest unvisited node is B with distance 4; if B connects to D with weight 1 then the new possible distance to D is 4 plus 1 equals 5, which does not improve on the current 5. Finally visit D with distance 5. The algorithm ends with the shortest distances from A to the other nodes recorded as 4 for B, 2 for C, and 5 for D. Create a video showing Dijkstra's algorithm with the nodes A, B, C, and D with weights 4, 2, and 3."""
+        
+        example_user_prompt = "Use the nodes A, B, C, and D with weights 4, 2, and 3 as described."
+        
+        # Build the prompt based on whether user provided constraints
+        if user_prompt:
+            prompt_text = f"""Analyze the content in these PDF pages and create a summary with video instructions.
+
+First, write the summary in this EXACT format - two continuous parts in one flowing text with no line breaks:
+1. First part: Explain the key logic or main concept
+2. Second part: Provide a concrete example starting with "For an example"
+
+Here's a reference example of the EXACT format to follow:
+{example_output}
+
+Then, provide detailed instructions for generating a video visualization, incorporating these user constraints: {user_prompt}
+
+USER CONSTRAINTS RULES:
+- NEVER modify user's numerical values (stride, padding, kernel_size, learning_rate, epoch, batch_size, etc.)
+- Use user's values EXACTLY as mentioned
+- Only fill in defaults for parameters the user didn't specify
+- If user mentions conflicting values, use the LAST mentioned value
+- If values are ambiguous, note it in the video_instructions
+
+Example user prompt: "{example_user_prompt}"
+
+Return your response in JSON format:
+{{"summary": "continuous text with logic and example...", "video_instructions": "Create a video showing... using stride=2 (user-specified), padding=0 (default)..."}}"""
+        else:
+            prompt_text = f"""Analyze the content in these PDF pages and create a summary with video instructions.
+
+First, write the summary in this EXACT format - two continuous parts in one flowing text with no line breaks:
+1. First part: Explain the key logic or main concept
+2. Second part: Provide a concrete example starting with "For an example"
+
+Here's a reference example of the EXACT format to follow:
+{example_output}
+
+Then, provide detailed instructions for generating a video visualization of the main logic.
+
+Return your response in JSON format:
+{{"summary": "continuous text with logic and example...", "video_instructions": "Create a video showing..."}}"""
+        
+        # Build content array with all images
+        content = [
+            {
+                "type": "text",
+                "text": prompt_text
+            }
+        ]
+        
+        # Add all images to the content
+        for img_base64 in base64_images:
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{img_base64}"
+                }
+            })
+        
+        logger.info(f"Generating AI analysis from {len(base64_images)} page(s)")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing algorithms and educational content. You generate JSON output with 'summary' (continuous text combining logic explanation and example with no line breaks) and 'video_instructions'. The summary must be one continuous flowing text."
+                },
+                {
+                    "role": "user",
+                    "content": content
+                }
+            ],
+            temperature=0.7,
+            max_tokens=3000,
+            response_format={"type": "json_object"}
+        )
+        
+        result = json.loads(response.choices[0].message.content.strip())
+        
+        # Remove all newlines from all fields to ensure completely continuous text
+        if 'summary' in result:
+            result['summary'] = result['summary'].replace('\n', ' ').strip()
+        if 'video_instructions' in result:
+            result['video_instructions'] = result['video_instructions'].replace('\n', ' ').strip()
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"Error generating summary: {str(e)}")
+        return None
+
+
+@shared_task(name="studio.analyze_pdf_vision")
+def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
+    """
+    Celery task: Analyze PDF using vision model.
+    - jobId, pdf path, user prompt
+    - Convert PDF to images
+    - Generate summary + video instructions using OpenAI vision
+    - (TODO) Generate visualization video
+    - Spring callback with results
+    """
+    logger.info("analyze_pdf_vision started job_id=%s input_path=%s", job_id, file_path)
+
+    # Handle relative vs absolute paths
     if not os.path.isabs(file_path):
         pdf_path = os.path.join(UPLOAD_DIR, file_path)
     else:
         pdf_path = file_path
 
     try:
-        # 1) PDF 텍스트 추출
-        pdf_text = extract_text_from_pdf(pdf_path)
+        # 1) Convert PDF to base64 images
+        base64_images = pdf_to_base64_images(pdf_path)
+        
+        if not base64_images:
+            raise Exception("Failed to convert PDF to images")
 
-        # 2) OpenAI로 핵심 요약 생성
-        system_prompt = ("""
-            너는 알고리즘/코드/수학 내용을 교육용으로 정리하는 어시스턴트다.
-            사용자의 프롬프트를 기준으로 PDF 내용을 핵심 알고리즘 흐름 위주로 요약해라.
+        # 2) Generate AI summary with vision model
+        result = generate_summary_from_images(base64_images, prompt)
+        
+        if not result:
+            raise Exception("Failed to generate summary from images")
 
-            <GLOBAL RULES>
-            - 절대로 사용자의 수치값(예: 3x3, 2, stride=1, 0.01, learning rate 등)을 수정하거나 보정하지 말라.
-            - padding, stride, kernel_size, input_size, epoch, batch_size, temperature 등
-            모든 하이퍼파라미터는 사용자가 언급한 값을 그대로 사용해야 한다.
-            - 사용자가 명시하지 않은 값만 기본값으로 채운다.
-            - 기본값은 도메인별 상식적인 값으로 설정하되, "추정"하지 않는다. 
-            (예: CNN은 stride=1, padding=0, seed=1)
-            - 사용자가 여러 곳에서 서로 다른 값을 적었다면, 
-            반드시 사용자가 제일 마지막에 언급한 값을 우선시한다.
-            - 값이 애매하거나 충돌하는 경우, 네가 멋대로 바꾸지 말고
-            "user_defined": false 와 함께 "note" 필드에 이유를 적어라.
-        """)
+        # Combine summary and video instructions into continuous text
+        continuous_text = result.get('summary', '') + ' ' + result.get('video_instructions', '')
+        continuous_text = continuous_text.strip()
 
-        user_content = f"""[사용자 프롬프트]
-{prompt}
-
-[PDF 내용 일부]
-{pdf_text[:12000]}"""
-
-        completion = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-        )
-        summary = completion.choices[0].message.content or ""
-
-        # 3) (TODO) 알고리즘 시각화 + 영상 생성 파이프라인
-        # 여기서 네가 만든 파이프라인을 호출해서 result_abs 에 영상 파일 생성하면 됨.
-        # 일단은 "영상이 /data/results 아래에 있다" 정도로만 둔다.
+        # 3) (TODO) Generate visualization video based on video_instructions
         os.makedirs(RESULT_DIR, exist_ok=True)
         result_rel = f"{job_id}_result.mp4"
         result_abs = os.path.join(RESULT_DIR, result_rel)
 
-        # --- TODO: 실제 파이프라인 결과를 result_abs에 저장 ---
-        # run_pipeline(pdf_path, summary, result_abs)
-        # ----------------------------------------------------
+        # --- TODO: Implement video generation pipeline ---
+        # run_pipeline(pdf_path, continuous_text, result_abs)
+        # -----------------------------------------------
 
-        # 지금은 S3 아직까지 안 묶었다 치고, Spring이 로컬 경로를 URL로 바꿔줄 수 있게
-        # 단순히 상대 경로만 전달 (또는 나중에 S3 URL로 교체)
         result_url = result_rel
 
         callback_payload = {
             "status": "SUCCESS",
             "resultUrl": result_url,
-            "summary": summary,
+            "summary": continuous_text,
             "errorMessage": None,
         }
 
     except Exception as e:
-        logger.exception("analyze_pdf_prompt failed job_id=%s", job_id)
+        logger.exception("analyze_pdf_vision failed job_id=%s", job_id)
         callback_payload = {
             "status": "FAILED",
             "resultUrl": None,
@@ -116,7 +229,7 @@ def analyze_pdf_prompt(job_id: int, file_path: str, prompt: str):
             "errorMessage": str(e),
         }
 
-    # 4) Spring 콜백
+    # 4) Spring callback
     try:
         cb_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
         logger.info("calling spring callback %s with %s", cb_url, callback_payload["status"])
