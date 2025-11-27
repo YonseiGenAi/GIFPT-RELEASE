@@ -22,8 +22,8 @@ public class FileUploadController {
 
   private final UploadedFileRepository repo;   // ⚠️ 엔티티명이 UploadFile이면, 레포도 이름/제네릭 맞춰라
   private final UserRepository userRepository;
-  private final Path uploadDir = Paths.get("uploads");
-
+  private final Path uploadDir = Paths.get("/data/uploads");
+  
   @SuppressWarnings("null")
   @PostMapping("/upload")
   public ResponseEntity<?> uploadFile(
