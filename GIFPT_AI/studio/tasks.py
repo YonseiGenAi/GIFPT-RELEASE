@@ -181,7 +181,9 @@ def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
 
     # Handle relative vs absolute paths
     if not os.path.isabs(file_path):
-        pdf_path = os.path.join(UPLOAD_DIR, file_path)
+    # 🔥 uploads/가 두 번 붙지 않도록 정규화
+        cleaned = file_path.replace("uploads/", "", 1)
+        pdf_path = os.path.join(UPLOAD_DIR, cleaned)
     else:
         pdf_path = file_path
 
