@@ -23,8 +23,6 @@ SPRING_CALLBACK_BASE = os.environ.get("SPRING_CALLBACK_BASE", "http://spring:808
 UPLOAD_DIR = os.environ.get("GIFPT_UPLOAD_DIR", "/data/uploads")
 RESULT_DIR = os.environ.get("GIFPT_RESULT_DIR", "/data/results")
 
-# Demo service endpoint (FastAPI in /Users/yena/demo)
-DEMO_API_BASE = os.environ.get("DEMO_API_BASE", "http://127.0.0.1:8000")
 DEMO_API_KEY = os.environ.get("DEMO_API_KEY")  # optional
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -47,7 +45,7 @@ def call_demo_generate(user_text: str, timeout: int = 300) -> dict:
     Call demo service /generate with given text and return JSON.
     Raises on non-2xx.
     """
-    url = f"{DEMO_API_BASE}/generate"
+    url = f"{SPRING_CALLBACK_BASE}/generate"
     headers = {"Content-Type": "application/json"}
     if DEMO_API_KEY:
         headers["Authorization"] = f"Bearer {DEMO_API_KEY}"
