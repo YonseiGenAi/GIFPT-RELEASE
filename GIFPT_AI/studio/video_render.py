@@ -192,11 +192,13 @@ def render_video_from_instructions(instructions: str) -> str:
     video_path = None
     max_render_attempts = 3
 
-    # GIFPT용 output_dir: 이미 쓰던 /data/results/videos 유지
+        # GIFPT용 output_dir: 이미 쓰던 /data/results/videos 유지
     output_dir = RESULT_DIR / "videos"
     output_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"video_{int(time.time())}.mp4"
-    output_path = output_dir / filename
+
+    # manim -o 에 넘길 출력 파일 이름
+    filename_root = f"video_{int(time.time())}"
+    output_name = f"{filename_root}.mp4"
 
     for attempt in range(1, max_render_attempts + 1):
         print(f"\n[Render] ─ Attempt {attempt}/{max_render_attempts}")
@@ -213,9 +215,9 @@ def render_video_from_instructions(instructions: str) -> str:
                     tmp_path,
                     "AlgorithmScene",
                     "--format", "mp4",
-                    "-o", filename,
+                    "-o", output_name,   # 🔥 여기서는 output_name 사용
                 ],
-                cwd=output_dir,    # 🔥 여기 중요: 실제 파일을 /data/results/videos/filename 으로 생성
+                cwd=output_dir,
                 check=True,
                 capture_output=True,
                 text=True,
@@ -223,14 +225,29 @@ def render_video_from_instructions(instructions: str) -> str:
             )
             r_dur = time.perf_counter() - r_start
 
-            if output_path.exists():
-                video_path = str(output_path)
+            # 🔍 Manim이 실제로 저장하는 경로 계산
+            from pathlib import Path
+            tmp_name = Path(tmp_path).stem
+            # /data/results/videos/media/videos/{tmp_name}/480p15/video_xxx.mp4
+            candidate = output_dir / "media" / "videos" / tmp_name / "480p15" / output_name
+
+            if candidate.exists():
+                video_path = str(candidate.resolve())
                 print("✅ Render success")
                 print(f"• Output: {video_path}")
                 print(f"• Duration: {r_dur:.2f}s")
                 break
             else:
-                print("⚠️ Render success but file not found:", output_path)
+                # 혹시 해상도나 경로가 다를 수도 있으니 전체 탐색 한번 더
+                matches = list(output_dir.rglob(output_name))
+                if matches:
+                    real = matches[0]
+                    video_path = str(real.resolve())
+                    print("⚠️ Expected %s but found at %s" % (candidate, real))
+                    print(f"• Duration: {r_dur:.2f}s")
+                    break
+                else:
+                    print("⚠️ Render success but file not found under", output_dir)
 
         except subprocess.CalledProcessError as e:
             err = classify_runtime_error(e.stderr or "")
@@ -257,10 +274,10 @@ def render_video_from_instructions(instructions: str) -> str:
                         [
                             "manim",
                             "-ql",
-                            tmp_fb.name,
+                            fb_path,
                             "AlgorithmScene",
                             "--format", "mp4",
-                            "-o", filename,
+                            "-o", output_name,
                         ],
                         cwd=output_dir,
                         check=True,
@@ -268,9 +285,20 @@ def render_video_from_instructions(instructions: str) -> str:
                         text=True,
                         timeout=60,
                     )
-                    if output_path.exists():
-                        video_path = str(output_path)
+                    # fallback 도 같은 방식으로 탐색
+                    from pathlib import Path
+                    fb_name = Path(fb_path).stem
+                    fb_candidate = output_dir / "media" / "videos" / fb_name / "480p15" / output_name
+                    if fb_candidate.exists():
+                        video_path = str(fb_candidate.resolve())
                         print(f"[Fallback] success: {video_path}")
+                    else:
+                        matches = list(output_dir.rglob(output_name))
+                        if matches:
+                            video_path = str(matches[0].resolve())
+                            print(f"[Fallback] found at {video_path}")
+                        else:
+                            print(f"[Fallback] video not found under {output_dir}")
                 except Exception as ee:
                     print(f"[Fallback] failed: {ee}")
                 break
@@ -283,7 +311,6 @@ def render_video_from_instructions(instructions: str) -> str:
             print("- message: render timeout")
             if attempt == max_render_attempts:
                 print("- action: fallback template (timeout)")
-                # 동일 fallback 재사용
                 fallback_code = (
                     "from manim import *\n\n"
                     "class AlgorithmScene(Scene):\n"
@@ -302,10 +329,10 @@ def render_video_from_instructions(instructions: str) -> str:
                         [
                             "manim",
                             "-ql",
-                            tmp_fb.name,
+                            fb_path,
                             "AlgorithmScene",
                             "--format", "mp4",
-                            "-o", filename,
+                            "-o", output_name,
                         ],
                         cwd=output_dir,
                         check=True,
@@ -313,9 +340,19 @@ def render_video_from_instructions(instructions: str) -> str:
                         text=True,
                         timeout=60,
                     )
-                    if output_path.exists():
-                        video_path = str(output_path)
+                    from pathlib import Path
+                    fb_name = Path(fb_path).stem
+                    fb_candidate = output_dir / "media" / "videos" / fb_name / "480p15" / output_name
+                    if fb_candidate.exists():
+                        video_path = str(fb_candidate.resolve())
                         print(f"[Fallback] success: {video_path}")
+                    else:
+                        matches = list(output_dir.rglob(output_name))
+                        if matches:
+                            video_path = str(matches[0].resolve())
+                            print(f"[Fallback] found at {video_path}")
+                        else:
+                            print(f"[Fallback] video not found under {output_dir}")
                 except Exception as ee:
                     print(f"[Fallback] failed: {ee}")
                 break
