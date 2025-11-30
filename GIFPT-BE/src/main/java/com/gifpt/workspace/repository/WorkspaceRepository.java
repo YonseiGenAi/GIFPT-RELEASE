@@ -11,5 +11,5 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, Long> {
 
     Optional<Workspace> findByAnalysisJobId(Long jobId);
 
-    Page<Workspace> findByMemberId(Long memberId, Pageable pageable);
+    Page<Workspace> findByOwnerId(Long ownerId, Pageable pageable);
 }

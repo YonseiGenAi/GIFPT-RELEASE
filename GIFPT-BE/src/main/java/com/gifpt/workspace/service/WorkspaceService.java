@@ -9,6 +9,7 @@ import com.gifpt.user.domain.User;
 import com.gifpt.user.repository.UserRepository;
 import com.gifpt.workspace.domain.Workspace;
 import com.gifpt.workspace.dto.WorkspaceResponse;
+import com.gifpt.workspace.dto.WorkspaceSummaryResponse;
 import com.gifpt.workspace.repository.WorkspaceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,6 +37,7 @@ public class WorkspaceService {
     private final AnalysisJobRepository analysisJobRepository;
     private final UserRepository userRepository;
     private final UploadedFileRepository uploadedFileRepository;
+
 
     private final RestClient.Builder restClientBuilder;
 
@@ -243,9 +245,8 @@ public class WorkspaceService {
      */
     public Page<WorkspaceResponse> getMyWorkspaces(Long userId, Pageable pageable) {
         // ownerId 기준으로 워크스페이스 조회
-        var page = workspaceRepository.findByMemberId(userId, pageable);
+        var page = workspaceRepository.findByOwnerId(userId, pageable);
 
-        // Workspace -> WorkspaceResponse 매핑
         return page.map(this::toDto);
     }
 }
