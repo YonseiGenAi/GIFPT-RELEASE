@@ -18,6 +18,8 @@ import org.springframework.web.client.RestClient;
 import com.gifpt.file.domain.UploadFile;
 import com.gifpt.file.repository.UploadedFileRepository;
 import org.springframework.http.MediaType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -235,4 +237,15 @@ public class WorkspaceService {
         // 6) DTO로 변환해서 리턴
         return toDto(workspace);
         }
+
+    /**
+     * ✅ 내 워크스페이스 목록 조회 (페이징)
+     */
+    public Page<WorkspaceResponse> getMyWorkspaces(Long userId, Pageable pageable) {
+        // ownerId 기준으로 워크스페이스 조회
+        var page = workspaceRepository.findByMemberId(userId, pageable);
+
+        // Workspace -> WorkspaceResponse 매핑
+        return page.map(this::toDto);
+    }
 }
