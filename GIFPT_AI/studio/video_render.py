@@ -11,20 +11,72 @@ import shutil
 from studio.ai.llm_domain import call_llm_detect_domain
 from studio.ai.llm import call_llm_domain_ir
 from studio.ai.render_cnn_matrix import render_cnn_matrix
-from studio.ai.llm_pseudocode import call_llm_pseudocode_ir, call_llm_sort_trace
-from studio.ai.llm_anim_ir import call_llm_anim_ir
-from studio.ai.llm_codegen import call_llm_codegen
+from studio.ai.llm_pseudocode import call_llm_pseudocode_ir, call_llm_pseudocode_ir_with_usage
+from studio.ai.llm_anim_ir import call_llm_anim_ir, call_llm_anim_ir_with_usage
+from studio.ai.llm_codegen import call_llm_codegen, call_llm_codegen_with_usage
 from studio.ai.render_sorting import render_sorting
+from studio.ai.llm_domain import build_sorting_trace_ir
 
 logger = logging.getLogger(__name__)
 
 RESULT_DIR = Path(os.environ.get("GIFPT_RESULT_DIR", "/tmp/gifpt_results"))
 
+SEP = "=" * 80
+SUBSEP = "-" * 80
+
+UNKNOWN_HELPERS = [
+    'AddPointToGraph', 'PlotPoint', 'CreateGraph', 'AnimateCurvePoint',
+    'DrawArrowBetween', 'ShowValueOnPlot'
+]
 
 def _sanitize_text(text: str) -> str:
     """main.py의 sanitize_text와 같은 역할 (간단한 공백/줄바꿈 정리)."""
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+def validate_manim_code_basic(code: str):
+    """LLM이 만든 Manim 코드에 대한 경량 검증"""
+    issues = []
+
+    if 'from manim import *' not in code:
+        issues.append({"error_type": "syntax", "message": "missing 'from manim import *'"})
+
+    if re.search(r'class\s+AlgorithmScene\s*\(Scene\)', code) is None:
+        issues.append({"error_type": "class_name", "message": "AlgorithmScene(Scene) not defined"})
+
+    if re.search(r'def\s+construct\s*\(self\)\s*:', code) is None:
+        issues.append({"error_type": "syntax", "message": "construct(self) not found"})
+
+    # hex colors
+    if re.search(r'#[0-9A-Fa-f]{6}', code):
+        issues.append({"error_type": "color", "message": "hex color literal detected"})
+
+    # invented helpers
+    for name in UNKNOWN_HELPERS:
+        if re.search(rf'\b{name}\s*\(', code):
+            issues.append({"error_type": "unknown_helper", "message": f"uses undefined helper {name}"})
+            break
+
+    # 매우 단순한 괄호 체크
+    if code.count('(') < code.count(')') or code.count('[') < code.count(']'):
+        issues.append({"error_type": "syntax", "message": "possible unmatched bracket"})
+
+    return issues
+
+
+def classify_runtime_error(stderr: str):
+    if 'NameError' in stderr:
+        m = re.search(r"NameError: name '([^']+)' is not defined", stderr)
+        name = m.group(1) if m else "<unknown>"
+        return {"error_type": "runtime_name", "message": f"undefined name: {name}"}
+    if 'ImportError' in stderr:
+        return {"error_type": "runtime_env", "message": "import error"}
+    if 'MemoryError' in stderr:
+        return {"error_type": "resource", "message": "out of memory"}
+    if 'Timeout' in stderr or 'timed out' in stderr:
+        return {"error_type": "timeout", "message": "render timeout"}
+    return {"error_type": "runtime", "message": "unknown runtime error"}
+
 
 
 def render_video_from_instructions(instructions: str) -> str:
@@ -60,60 +112,220 @@ def render_video_from_instructions(instructions: str) -> str:
         logger.info("🎬 sorting video rendered at %s", video_path)
         return video_path
 
-    # (3) 일반 알고리즘/모델 시각화 (pseudocode → anim_ir → anim_ir → manim 코드)
-    pseudo_ir = call_llm_pseudocode_ir(user_text)
-    anim_ir = call_llm_anim_ir(pseudo_ir)
-    manim_code = call_llm_codegen(anim_ir)
+        # 3) 일반 알고리즘/모델 시각화 (pseudocode → anim_ir → manim 코드)
+    #    main.py의 고급 로직 이식
 
-    # 결과 저장 디렉터리 (/data/results/videos 등)
+    print("\n" + SEP)
+    print("🚀 LLM 기반 코드 생성 파이프라인 (Django worker)")
+    print(f"• Domain: {domain}")
+    # 1단계: pseudocode IR + usage
+    from studio.ai.llm_pseudocode import call_llm_pseudocode_ir_with_usage
+    t0 = time.perf_counter()
+    pseudo_ir, usage_pseudo = call_llm_pseudocode_ir_with_usage(user_text)
+    t_pseudo = time.perf_counter() - t0
+
+    if usage_pseudo:
+        print(f"• Pseudocode tokens → prompt:{usage_pseudo.get('prompt_tokens')} "
+              f"completion:{usage_pseudo.get('completion_tokens')} "
+              f"total:{usage_pseudo.get('total_tokens')}")
+    print(f"• Pseudocode time → {t_pseudo:.2f}s")
+    print(SEP)
+
+    # 2단계: Animation IR
+    from studio.ai.llm_anim_ir import call_llm_anim_ir_with_usage
+    ta0 = time.perf_counter()
+    anim_ir, usage_anim = call_llm_anim_ir_with_usage(pseudo_ir)
+    t_anim = time.perf_counter() - ta0
+
+    print("\n" + SUBSEP)
+    print("📊 Animation IR 생성 완료")
+    print(f"• Actions: {len(anim_ir.get('actions', []))}")
+    if usage_anim:
+        print(f"• Animation IR tokens → prompt:{usage_anim.get('prompt_tokens')} "
+              f"completion:{usage_anim.get('completion_tokens')} "
+              f"total:{usage_anim.get('total_tokens')}")
+    print(f"• Animation IR time → {t_anim:.2f}s")
+
+    # 3단계: Animation IR → Manim 코드 (리트라이 + post-check)
+    print("\n" + SUBSEP)
+    print("🧩 Step 2: CodeGen (Animation IR → Manim Code)")
+    from studio.ai.llm_codegen import call_llm_codegen_with_usage
+
+    manim_code = None
+    max_codegen_attempts = 3
+
+    for attempt in range(1, max_codegen_attempts + 1):
+        print(f"\n[CodeGen] ─ Attempt {attempt}/{max_codegen_attempts}")
+        start = time.perf_counter()
+        code_try, usage_codegen = call_llm_codegen_with_usage(anim_ir)
+        issues = validate_manim_code_basic(code_try)
+        dur = time.perf_counter() - start
+
+        if issues:
+            print(f"✖ Post-checks failed ({len(issues)} issues) • {dur:.2f}s")
+            if usage_codegen:
+                print(f"  · tokens → prompt:{usage_codegen.get('prompt_tokens')} "
+                      f"completion:{usage_codegen.get('completion_tokens')} "
+                      f"total:{usage_codegen.get('total_tokens')}")
+            for it in issues[:3]:
+                print(f"  - [{it['error_type']}] {it['message']}")
+            if attempt == max_codegen_attempts:
+                manim_code = code_try
+                print("→ Proceeding with last attempt (issues remain)")
+            else:
+                print("→ Retrying with minimal feedback…")
+            continue
+        else:
+            manim_code = code_try
+            print(f"✔ Passed post-checks • {dur:.2f}s")
+            if usage_codegen:
+                print(f"  · tokens → prompt:{usage_codegen.get('prompt_tokens')} "
+                      f"completion:{usage_codegen.get('completion_tokens')} "
+                      f"total:{usage_codegen.get('total_tokens')}")
+            break
+
+    # 디버깅용 코드 저장
+    debug_path = f"/data/results/debug_generated_code_{domain}.py"
+    with open(debug_path, "w", encoding="utf-8") as f:
+        f.write(manim_code or "")
+    print(f"📝 Generated code saved: {debug_path}")
+
+    # 4단계: Manim 렌더링 (리트라이 + fallback)
+    print("\n" + SUBSEP)
+    print("🎬 Step 3: Rendering (Manim)")
+    video_path = None
+    max_render_attempts = 3
+
+    # GIFPT용 output_dir: 이미 쓰던 /data/results/videos 유지
     output_dir = RESULT_DIR / "videos"
     output_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"video_{int(time.time())}.mp4"
+    output_path = output_dir / filename
 
-    # 🔹 manim용 베이스 이름 (확장자 없이)
-    basename = f"video_{int(time.time())}"
-    filename = f"{basename}.mp4"
+    for attempt in range(1, max_render_attempts + 1):
+        print(f"\n[Render] ─ Attempt {attempt}/{max_render_attempts}")
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
+            tmp.write(manim_code)
+            tmp_path = tmp.name
 
-    logger.info("🎬 rendering video (basename=%s) under %s", basename, output_dir)
+        try:
+            r_start = time.perf_counter()
+            subprocess.run(
+                [
+                    "manim",
+                    "-ql",
+                    tmp_path,
+                    "AlgorithmScene",
+                    "--format", "mp4",
+                    "-o", filename,
+                ],
+                cwd=output_dir,    # 🔥 여기 중요: 실제 파일을 /data/results/videos/filename 으로 생성
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            r_dur = time.perf_counter() - r_start
 
-    # manim 코드 임시 파일로 저장
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
-        tmp.write(manim_code)
-        tmp_path = tmp.name
+            if output_path.exists():
+                video_path = str(output_path)
+                print("✅ Render success")
+                print(f"• Output: {video_path}")
+                print(f"• Duration: {r_dur:.2f}s")
+                break
+            else:
+                print("⚠️ Render success but file not found:", output_path)
 
-    # Manim 실행 (AlgorithmScene 기준, main.py 로직과 동일한 구조)
-    subprocess.run(
-        [
-            "manim",
-            "-ql",
-            tmp_path,
-            "AlgorithmScene",
-            "--format",
-            "mp4",
-            "-o",
-            basename,        # ✅ 확장자 없는 베이스 이름만 넘기기
-        ],
-        cwd=output_dir,      # media 디렉터리 포함해서 output_dir 아래가 루트가 되도록
-        check=True,
-    )
+        except subprocess.CalledProcessError as e:
+            err = classify_runtime_error(e.stderr or "")
+            print(f"- runtime_error = {err['error_type']}")
+            print(f"- message: {err['message']}")
+            if attempt == max_render_attempts:
+                print("- action: fallback template")
+                # 최소 fallback scene
+                fallback_code = (
+                    "from manim import *\n\n"
+                    "class AlgorithmScene(Scene):\n"
+                    "    def construct(self):\n"
+                    "        txt = Text('Fallback', font_size=48, color=WHITE)\n"
+                    "        self.play(FadeIn(txt))\n"
+                    "        self.wait(1)\n"
+                    "        self.play(FadeOut(txt))\n"
+                    "        self.wait(1)\n"
+                )
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp_fb:
+                    tmp_fb.write(fallback_code)
+                    fb_path = tmp_fb.name
+                try:
+                    subprocess.run(
+                        [
+                            "manim",
+                            "-ql",
+                            tmp_fb.name,
+                            "AlgorithmScene",
+                            "--format", "mp4",
+                            "-o", filename,
+                        ],
+                        cwd=output_dir,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    if output_path.exists():
+                        video_path = str(output_path)
+                        print(f"[Fallback] success: {video_path}")
+                except Exception as ee:
+                    print(f"[Fallback] failed: {ee}")
+                break
+            else:
+                print("- action: retry with feedback (no custom helpers, keep core Manim)")
+                manim_code, _ = call_llm_codegen_with_usage(anim_ir)
 
-    # 🔹 manim이 실제로 만든 mp4 파일 위치 찾기 (media/.../basename.mp4)
-    candidates = list(output_dir.rglob(f"{basename}.mp4"))
-    if not candidates:
-        logger.error("❌ Manim finished but could not find %s.mp4 under %s", basename, output_dir)
-        raise RuntimeError(f"Manim finished but could not find {basename}.mp4 under {output_dir}")
+        except subprocess.TimeoutExpired:
+            print("- runtime_error = timeout")
+            print("- message: render timeout")
+            if attempt == max_render_attempts:
+                print("- action: fallback template (timeout)")
+                # 동일 fallback 재사용
+                fallback_code = (
+                    "from manim import *\n\n"
+                    "class AlgorithmScene(Scene):\n"
+                    "    def construct(self):\n"
+                    "        txt = Text('Fallback', font_size=48, color=WHITE)\n"
+                    "        self.play(FadeIn(txt))\n"
+                    "        self.wait(1)\n"
+                    "        self.play(FadeOut(txt))\n"
+                    "        self.wait(1)\n"
+                )
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp_fb:
+                    tmp_fb.write(fallback_code)
+                    fb_path = tmp_fb.name
+                try:
+                    subprocess.run(
+                        [
+                            "manim",
+                            "-ql",
+                            tmp_fb.name,
+                            "AlgorithmScene",
+                            "--format", "mp4",
+                            "-o", filename,
+                        ],
+                        cwd=output_dir,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    if output_path.exists():
+                        video_path = str(output_path)
+                        print(f"[Fallback] success: {video_path}")
+                except Exception as ee:
+                    print(f"[Fallback] failed: {ee}")
+                break
+            else:
+                print("- action: retry")
+                manim_code, _ = call_llm_codegen_with_usage(anim_ir)
 
-    src_path = candidates[0]
-
-    # 🔹 우리가 약속한 최종 위치: output_dir / filename
-    final_path = output_dir / filename
-    if final_path.exists():
-        final_path.unlink()
-
-    # src_path가 이미 final_path이면 move 안 해도 되지만, 안전하게 한 번 정리
-    if src_path.resolve() != final_path.resolve():
-        final_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src_path), final_path)
-
-    logger.info("🎬 video rendered at %s", final_path)
-
-    return str(final_path)
+    logger.info("🎬 video rendered at %s", video_path)
+    return video_path

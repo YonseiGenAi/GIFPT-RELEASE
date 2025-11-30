@@ -2,7 +2,6 @@
 import os, json
 from openai import OpenAI
 from dotenv import load_dotenv
-from .llm_domain import call_llm_detect_domain
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -75,8 +74,10 @@ Output JSON strictly matching the schema described above.
 """.strip()
 
 def call_llm_pseudocode_ir(user_text: str):
-    domain = call_llm_detect_domain(user_text)
-
+    """
+    자연어 설명을 도메인과 무관한 순수 pseudocode IR로 변환한다.
+    이 단계에서는 domain을 붙이지 않는다.
+    """
     prompt = build_prompt_pseudocode(user_text)
     resp = client.chat.completions.create(
         model="gpt-4.1-mini",
@@ -88,70 +89,47 @@ def call_llm_pseudocode_ir(user_text: str):
     )
     result = json.loads(resp.choices[0].message.content)
 
-    meta = result.setdefault("metadata", {})
-    meta["domain"] = domain
+    # metadata는 최소한 항상 존재하게만 해준다.
+    result.setdefault("metadata", {})
 
     return result
 
 
-# --- 2) sorting 전용 trace 생성 ---
+# New: variant that also returns token usage
 
-SYSTEM_PROMPT_SORTING_TRACE = """
-You are a sorting algorithm visual trace generator.
+def _extract_usage(usage_obj):
+    if not usage_obj:
+        return None
+    # Support both Chat Completions usage (prompt/completion/total)
+    # and potential input/output tokens naming
+    pt = getattr(usage_obj, "prompt_tokens", None)
+    ct = getattr(usage_obj, "completion_tokens", None)
+    tt = getattr(usage_obj, "total_tokens", None)
+    if pt is None:
+        pt = getattr(usage_obj, "input_tokens", None)
+    if ct is None:
+        ct = getattr(usage_obj, "output_tokens", None)
+    if tt is None and pt is not None and ct is not None:
+        tt = pt + ct
+    return {"prompt_tokens": pt, "completion_tokens": ct, "total_tokens": tt}
 
-Given a natural language description of sorting, like:
-"배열 [5, 1, 4, 2, 8]을 버블 정렬로 오름차순 정렬하는 과정을 단계별로 시각화해줘."
 
-Output JSON with the following structure:
-
-{
-  "algorithm": "bubble_sort",
-  "input": { "array": [5, 1, 4, 2, 8] },
-  "trace": [
-    { "step": 1,  "compare": [0,1], "swap": true,  "array": [1,5,4,2,8] },
-    { "step": 2,  "compare": [1,2], "swap": true,  "array": [1,4,5,2,8] },
-    { "step": 3,  "compare": [2,3], "swap": true,  "array": [1,4,2,5,8] },
-    { "step": 4,  "compare": [3,4], "swap": false, "array": [1,4,2,5,8] },
-
-    { "step": 5,  "compare": [0,1], "swap": false, "array": [1,4,2,5,8] },
-    { "step": 6,  "compare": [1,2], "swap": true,  "array": [1,2,4,5,8] },
-    { "step": 7,  "compare": [2,3], "swap": false, "array": [1,2,4,5,8] },
-    { "step": 8,  "compare": [3,4], "swap": false, "array": [1,2,4,5,8] },
-
-    { "step": 9,  "compare": [0,1], "swap": false, "array": [1,2,4,5,8] },
-    { "step": 10, "compare": [1,2], "swap": false, "array": [1,2,4,5,8] },
-    { "step": 11, "compare": [2,3], "swap": false, "array": [1,2,4,5,8] },
-    { "step": 12, "compare": [3,4], "swap": false, "array": [1,2,4,5,8] }
-  ]
-}
-
-Rules:
-- "input.array" MUST be an integer list.
-- "trace" MUST be a list of steps in chronological order.
-- Each step MUST have:
-  - "step": integer
-  - "compare": [i, j] indices being compared
-  - "swap": boolean
-- ONLY output valid JSON. No explanations, no comments.
-"""
-
-def _build_prompt_sort_trace(user_text: str) -> str:
-    return f"""
-User description:
-{user_text}
-
-Extract the array and generate a full bubble-sort-like trace.
-Output JSON with keys: algorithm, input.array, trace[{{step, compare, swap}}].
-""".strip()
-
-def call_llm_sort_trace(user_text: str) -> dict:
+def call_llm_pseudocode_ir_with_usage(user_text: str):
+    prompt = build_prompt_pseudocode(user_text)
     resp = client.chat.completions.create(
-        model="gpt-5",
+        model="gpt-4.1-mini",
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT_SORTING_TRACE},
-            {"role": "user", "content": _build_prompt_sort_trace(user_text)},
+            {"role": "system", "content": SYSTEM_PROMPT_PSEUDOCODE},
+            {"role": "user", "content": prompt},
         ],
     )
-    return json.loads(resp.choices[0].message.content)
+    result = json.loads(resp.choices[0].message.content)
+    result.setdefault("metadata", {})
+    usage_dict = _extract_usage(getattr(resp, "usage", None))
+    return result, usage_dict
+
+
+
+
 
