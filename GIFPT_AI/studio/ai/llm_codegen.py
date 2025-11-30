@@ -2,13 +2,18 @@
 import os, json
 from openai import OpenAI
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-REFERENCE_PATH = "ai/render_cnn_matrix.py"  # 너가 쓴 파일 경로
+BASE_DIR = Path(__file__).resolve().parent
+
+# 같은 폴더에 있는 render_cnn_matrix.py 를 참조
+REFERENCE_PATH = BASE_DIR / "render_cnn_matrix.py"
+
 with open(REFERENCE_PATH, "r", encoding="utf-8") as f:
-    reference_code = f.read()
+    CNN_REFERENCE = f.read()
 
 SYSTEM_PROMPT = f"""
 You are a Manim code generator.
