@@ -1,4 +1,4 @@
-# app/llm_codegen.py
+# ai/llm_codegen.py
 import os, json
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-REFERENCE_PATH = "app/render_cnn_matrix.py"  # 너가 쓴 파일 경로
+REFERENCE_PATH = "ai/render_cnn_matrix.py"  # 너가 쓴 파일 경로
 with open(REFERENCE_PATH, "r", encoding="utf-8") as f:
     reference_code = f.read()
 

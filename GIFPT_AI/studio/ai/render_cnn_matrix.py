@@ -1,11 +1,13 @@
-# app/render_cnn_matrix.py
+# ai/render_cnn_matrix.py
 from __future__ import annotations
+import os
 import json
 import tempfile
 import subprocess
 from pathlib import Path
 
-MEDIA_DIR = Path("media/videos/CNNScene")
+BASE_RESULT_DIR = Path(os.environ.get("GIFPT_RESULT_DIR", "/tmp/gifpt_results"))
+MEDIA_DIR = BASE_RESULT_DIR / "videos" / "CNNScene"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
 def render_cnn_matrix(cfg: dict, out_basename="cnn_param_demo", fmt="mp4") -> str:
@@ -24,6 +26,7 @@ def render_cnn_matrix(cfg: dict, out_basename="cnn_param_demo", fmt="mp4") -> st
     scene_template = r"""
 from manim import *
 import random, json
+import numpy as np
 
 class CNNParamScene(Scene):
     def construct(self):

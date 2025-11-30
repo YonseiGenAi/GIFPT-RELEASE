@@ -1,4 +1,4 @@
-# app/llm_anim_ir.py
+# ai/llm_anim_ir.py
 import os, json
 from openai import OpenAI
 from dotenv import load_dotenv

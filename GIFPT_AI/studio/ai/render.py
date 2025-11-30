@@ -5,7 +5,8 @@ import subprocess
 from pathlib import Path
 
 # --- 출력 경로 기본 설정 ---
-MEDIA_DIR = Path("media/videos/IRScene")
+BASE_RESULT_DIR = Path(os.environ.get("GIFPT_RESULT_DIR", "/tmp/gifpt_results"))
+MEDIA_DIR = BASE_RESULT_DIR / "videos" / "IRScene"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -130,6 +131,7 @@ class IRScene(Scene):
         tmp_path = tmp_file.name
 
     print(f"📝 Temporary scene written to: {tmp_path}")
+    output_path = MEDIA_DIR / f"{out_basename}.{fmt}"
 
     # --- Manim 렌더 실행 ---
     cmd = [
@@ -138,7 +140,8 @@ class IRScene(Scene):
         tmp_path,
         "IRScene",
         "--format", fmt,
-        "-o", f"{out_basename}.{fmt}",
+        "-o", out_basename,
+        "--media_dir", str(BASE_RESULT_DIR),
     ]
 
     try:
@@ -147,7 +150,6 @@ class IRScene(Scene):
         print("🔥 Manim render failed:", e)
         raise RuntimeError(f"Manim rendering failed: {e}")
 
-    output_path = MEDIA_DIR / f"{out_basename}.{fmt}"
     print(f"✅ Render complete: {output_path.resolve()}")
     return str(output_path)
 

@@ -1,10 +1,10 @@
-# app/llm.py
+# ai/llm.py
 import os, json
 from typing import Dict, Any, List, Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
-from app.schema import schema_errors, invariants_errors  # 검증은 기존 함수 재사용:contentReference[oaicite:2]{index=2}
-from app.prompts import DOMAIN_PROMPTS
+from ai.schema import schema_errors, invariants_errors  # 검증은 기존 함수 재사용:contentReference[oaicite:2]{index=2}
+from ai.prompts import DOMAIN_PROMPTS
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))

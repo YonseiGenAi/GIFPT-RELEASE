@@ -1,4 +1,4 @@
-# app/llm_domain.py
+# ai/llm_domain.py
 import os, json
 from openai import OpenAI
 from dotenv import load_dotenv

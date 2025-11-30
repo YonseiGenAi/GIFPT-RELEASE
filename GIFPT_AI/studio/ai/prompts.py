@@ -1,4 +1,4 @@
-# app/prompts.py
+# ai/prompts.py
 
 DOMAIN_PROMPTS = {
     "cnn_param": {

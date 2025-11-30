@@ -1,4 +1,4 @@
-# app/render_sorting.py
+# ai/render_sorting.py
 import json, os
 import subprocess
 import tempfile

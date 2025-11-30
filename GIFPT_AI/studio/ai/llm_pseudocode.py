@@ -1,8 +1,8 @@
-# app/llm_pseudocode.py
+# ai/llm_pseudocode.py
 import os, json
 from openai import OpenAI
 from dotenv import load_dotenv
-from app.llm_domain import call_llm_detect_domain
+from ai.llm_domain import call_llm_detect_domain
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
