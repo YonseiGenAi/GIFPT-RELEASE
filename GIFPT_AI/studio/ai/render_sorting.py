@@ -222,7 +222,6 @@ class SortingScene(Scene, LayoutMixin):
         "SortingScene",
         "-ql",  
         "-o",
-        f"{out_basename}.mp4",
     ]
 
     env = os.environ.copy()
