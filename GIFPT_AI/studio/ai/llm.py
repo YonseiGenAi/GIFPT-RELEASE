@@ -1,9 +1,9 @@
 # ai/llm.py
 import os, json
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List
 from dotenv import load_dotenv
 from openai import OpenAI
-from .schema import schema_errors, invariants_errors  # 검증은 기존 함수 재사용:contentReference[oaicite:2]{index=2}
+from .schema import schema_errors, invariants_errors, validate_attention_ir  # 검증은 기존 함수 재사용:contentReference[oaicite:2]{index=2}
 from .prompts import DOMAIN_PROMPTS
 
 load_dotenv()
@@ -114,39 +114,39 @@ def generate_ir_with_validation(user_text: str, max_retries_zero_temp: int = 2) 
 
 # ---------- Domain-level IR Generator ----------
 def call_llm_domain_ir(domain: str, user_text: str, temperature: float = 0.0) -> Dict[str, Any]:
-    """도메인 이름에 맞는 프롬프트 템플릿을 이용해 IR 생성"""
     if domain not in DOMAIN_PROMPTS:
         raise ValueError(f"Unknown domain: {domain}")
 
     prompt_cfg = DOMAIN_PROMPTS[domain]
-    base_prompt = prompt_cfg["template"].format(text=user_text)
+    template = prompt_cfg["template"]
 
-    # ✅ 전 도메인 공통 규칙: 사용자의 수치, 조건, 표현을 절대 변경하지 말 것
+    # ⚠️ 정렬 템플릿은 JSON 예시 때문에 {}가 너무 많아서 .format을 쓰면 항상 터진다.
+    if domain == "sorting_trace":
+        # template 안에 {text} 같은 placeholder도 쓰지 말고,
+        # 그냥 맨 아래에 user_text를 붙여서 보내는 방식으로 간다.
+        base_prompt = template + f"\n\nUser request:\n{user_text}\n"
+    else:
+        # cnn_param, seq_attention 쪽은 원래대로 {text} 치환 유지
+        base_prompt = template.format(text=user_text)
+
     universal_rules = """
     <GLOBAL RULES>
     - 절대로 사용자의 수치값(예: 3x3, 2, stride=1, 0.01, learning rate 등)을 수정하거나 보정하지 말라.
     - padding, stride, kernel_size, input_size, epoch, batch_size, temperature 등
-      모든 하이퍼파라미터는 사용자가 언급한 값을 그대로 사용해야 한다.
-    - 사용자가 명시하지 않은 값만 기본값으로 채운다.
-    - input_size는 padding을 포함하지 않는다. padding은 별도의 값으로만 사용된다.
-    - 기본값은 도메인별 상식적인 값으로 설정하되, "추정"하지 않는다. (예: CNN은 stride=1, padding=0, seed=1)
-    - 출력 JSON은 오직 요청된 도메인에 필요한 필드만 포함해야 한다.
-    - 출력은 항상 완전한 JSON 객체로 반환해야 하며, 문자열이나 설명문이 포함되어서는 안 된다.
-    </GLOBAL RULES>
+      모든 하이퍼파라미터는 입력된 그대로 사용하라.
+    - JSON 이외의 자연어 설명, 주석, 코드블록을 출력하지 말라.
     """
 
-    # ✅ 도메인별 템플릿에 공통 규칙 주입
-    full_prompt = base_prompt + "\n\n" + universal_rules
+    final_prompt = base_prompt + "\n\n" + universal_rules
 
-    # ✅ LLM 호출
     resp = client.chat.completions.create(
         model="gpt-4.1-mini",
-        temperature=temperature,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": prompt_cfg["system"]},
-            {"role": "user", "content": full_prompt},
+            {"role": "user", "content": final_prompt},
         ],
+        temperature=temperature,
     )
 
     print("\n=== 🧠 LLM RAW OUTPUT ===")
@@ -154,3 +154,15 @@ def call_llm_domain_ir(domain: str, user_text: str, temperature: float = 0.0) ->
     print("=========================\n")
 
     return json.loads(resp.choices[0].message.content)
+
+
+def call_llm_attention_ir(user_text: str) -> dict:
+    # 도메인은 pattern과 1:1로 맞춘다
+    raw = call_llm_domain_ir("seq_attention", user_text)
+    # raw가 바로 attn_ir라고 가정 
+    attn_ir = raw
+
+    errors = validate_attention_ir(attn_ir)
+    if errors:
+        raise ValueError(f"attention IR validation failed: {errors}")
+    return attn_ir

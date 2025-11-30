@@ -1,0 +1,50 @@
+from manim import *
+import json
+
+# IR는 Jinja에서 직렬화되어 주입됨
+IR = {{ ir | safe }}
+
+class IRScene(Scene):
+    def construct(self):
+        comps = IR.get("components", [])
+        events = IR.get("events", [])
+
+        # 1) 컴포넌트 초기 배치 (수평 정렬)
+        dots = {}
+        labels = {}
+        items = VGroup()
+        x0 = -3.5
+        dx = 1.6
+        for i, c in enumerate(comps):
+            label = c.get("label", c.get("id",""))
+            box = RoundedRectangle(height=1.0, width=1.2, corner_radius=0.15)
+            text = Text(str(label), font_size=36)
+            grp = VGroup(box, text).arrange(DOWN, buff=0.1)
+            grp.move_to([x0 + i*dx, 0, 0])
+            items.add(grp)
+            dots[c["id"]] = grp
+            labels[c["id"]] = text
+
+        self.play(FadeIn(items))
+        self.wait(0.2)
+
+        t = 0.0
+        for e in events:
+            op = e.get("op", "")
+            a = e.get("from")
+            b = e.get("to")
+            # compare: 두 항목 하이라이트
+            if op == "compare" and a in dots and b in dots:
+                self.play(Indicate(dots[a], scale_factor=1.05), Indicate(dots[b], scale_factor=1.05), run_time=0.4)
+            # swap: 두 항목의 위치 교환
+            elif op == "swap" and a in dots and b in dots:
+                A = dots[a]
+                B = dots[b]
+                posA, posB = A.get_center(), B.get_center()
+                self.play(A.animate.move_to(posB), B.animate.move_to(posA), run_time=0.5)
+                # 사전 내 key는 그대로 두고, 좌표만 바뀌면 충분
+            # highlight: 특정 항목 강조 (옵션)
+            elif op == "highlight" and "target" in e and e["target"] in dots:
+                self.play(Flash(dots[e["target"]]), run_time=0.4)
+
+        self.wait(0.6)

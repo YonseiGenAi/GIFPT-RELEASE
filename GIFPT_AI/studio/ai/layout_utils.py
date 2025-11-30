@@ -1,5 +1,6 @@
 from manim import *
 from typing import List, Tuple, Dict, Optional
+import numpy as np
 
 # === 1. 기본 색상 / 스타일 프리셋 ===
 
@@ -192,6 +193,25 @@ def autorescale_group(
 
     group.move_to(ORIGIN)
     return group
+
+
+def ensure_on_screen(mobject, margin: float = 0.5):
+    """
+    범용 화면 맞춤 함수 - 어떤 Mobject든 화면 안에 들어오도록 자동 조정
+    
+    Args:
+        mobject: Manim Mobject (VGroup, Circle, Rectangle 등 모두 가능)
+        margin: 여백 (기본 0.5)
+    
+    Returns:
+        조정된 mobject (in-place로 수정됨)
+        
+    사용 예:
+        nodes = VGroup(*[Circle() for _ in range(10)])
+        nodes.arrange(RIGHT, buff=0.3)
+        ensure_on_screen(nodes)  # 자동으로 크기 조정 + 중앙 정렬
+    """
+    return autorescale_group(mobject, margin=margin)
 
 
 # === 7. 공통 화살표/엣지 유틸 ===

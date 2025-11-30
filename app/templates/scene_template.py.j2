@@ -1,0 +1,59 @@
+{% raw %}
+from manim import *
+import json, numpy as np
+
+IR = json.loads(r'''{{ ir }}''')
+
+class IRScene(Scene):
+    def construct(self):
+        # 1) 컴포넌트 배치
+        comps = {}
+        # 자동 배치 대비: 기본 y=0, x는 등간격
+        default_positions = [LEFT*5, LEFT*3, LEFT, RIGHT, RIGHT*3, RIGHT*5]
+
+        for i, c in enumerate(IR.get("components", [])):
+            cid = c["id"]
+            pos = c.get("pos")
+            if pos and len(pos) == 3:
+                p = np.array(pos)
+            else:
+                # pos가 없으면 자동 배치
+                p = default_positions[i] if i < len(default_positions) else RIGHT * (2*i - 5)
+
+            box = RoundedRectangle(corner_radius=0.18, width=2.6, height=1.2, color=BLUE).move_to(p)
+            label = MarkupText(c.get("label", cid)).scale(0.4).move_to(box.get_center())
+            group = VGroup(box, label)
+            self.play(Create(box), FadeIn(label), run_time=0.3)
+            comps[cid] = group
+
+        self.wait(0.2)
+
+        # 2) 이벤트(간단 흐름 화살표 + 라벨)
+        # t 증가 순서대로 등장
+        events = sorted(IR.get("events", []), key=lambda e: e.get("t", 0))
+        for e in events:
+            op = e.get("op","")
+            if op in ("flow","send","call"):
+                src = comps.get(e.get("from"))
+                dst = comps.get(e.get("to"))
+                if src and dst:
+                    arrow = Arrow(src.get_right(), dst.get_left(), buff=0.2)
+                    data = e.get("data") or e.get("item") or op
+                    label = MarkupText(str(data)).scale(0.28).next_to(arrow, UP, buff=0.1)
+                    self.play(GrowArrow(arrow), FadeIn(label), run_time=0.35)
+            elif op in ("insert","read","evict"):
+                tgt = comps.get(e.get("target"))
+                if tgt:
+                    glow = SurroundingRectangle(tgt, color=YELLOW, buff=0.12)
+                    txt  = MarkupText(op).scale(0.3).next_to(tgt, UP, buff=0.05)
+                    self.play(Create(glow), FadeIn(txt), run_time=0.3)
+                    self.play(FadeOut(glow), FadeOut(txt), run_time=0.2)
+            else:
+                # 미정의 op는 상단에 텍스트로 로그만
+                note = MarkupText(f"{op}").scale(0.3).to_edge(UP)
+                self.play(FadeIn(note), run_time=0.2)
+                self.play(FadeOut(note), run_time=0.2)
+
+        self.wait(0.5)
+{% endraw %}
+ 
