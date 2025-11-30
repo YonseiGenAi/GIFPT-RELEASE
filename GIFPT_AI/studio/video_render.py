@@ -6,14 +6,10 @@ import subprocess
 import re
 from pathlib import Path
 import logging
-import shutil
 
 from studio.ai.llm_domain import call_llm_detect_domain
 from studio.ai.llm import call_llm_domain_ir
 from studio.ai.render_cnn_matrix import render_cnn_matrix
-from studio.ai.llm_pseudocode import call_llm_pseudocode_ir, call_llm_pseudocode_ir_with_usage
-from studio.ai.llm_anim_ir import call_llm_anim_ir, call_llm_anim_ir_with_usage
-from studio.ai.llm_codegen import call_llm_codegen, call_llm_codegen_with_usage
 from studio.ai.render_sorting import render_sorting
 from studio.ai.llm_domain import build_sorting_trace_ir
 
@@ -107,7 +103,7 @@ def render_video_from_instructions(instructions: str) -> str:
 
     # (2) 정렬 전용 파이프라인 (trace → render_sorting)
     if domain == "sorting":
-        sort_trace = call_llm_sort_trace(user_text)
+        sort_trace = build_sorting_trace_ir(user_text)
         video_path = render_sorting(sort_trace)
         logger.info("🎬 sorting video rendered at %s", video_path)
         return video_path

@@ -107,7 +107,7 @@ Return your response in JSON format:
         else:
             prompt_text = f"""Analyze the content in these PDF pages and create a summary with video instructions.
 
-First, write the summary in this EXACT format - two continuous parts in one flowing text with no line breaks:
+    First, write the summary in this EXACT format - two continuous parts in one flowing text with no line breaks:
 1. First part: Explain the key logic or main concept
 2. Second part: Provide a concrete example starting with "For an example"
 
