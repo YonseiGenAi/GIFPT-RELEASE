@@ -14,6 +14,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.MediaType;
+import com.gifpt.workspace.dto.ChatRequest;
+import com.gifpt.workspace.dto.ChatResponse;
 
 @RestController
 @RequestMapping("/api/v1/workspaces")
@@ -73,6 +75,21 @@ public class WorkspaceController {
             @PathVariable Long workspaceId
     ) {
         WorkspaceResponse resp = workspaceService.getWorkspace(workspaceId, user.getId());
+        return ResponseEntity.ok(resp);
+    }
+
+    // ✅ 4) 워크스페이스 기반 챗봇
+    @PostMapping("/{workspaceId}/chat")
+    public ResponseEntity<ChatResponse> chatOnWorkspace(
+            @AuthenticationPrincipal CustomUserPrincipal user,
+            @PathVariable Long workspaceId,
+            @RequestBody ChatRequest request
+    ) {
+        ChatResponse resp = workspaceService.chatOnWorkspace(
+                user.getId(),
+                workspaceId,
+                request.message()
+        );
         return ResponseEntity.ok(resp);
     }
 }
