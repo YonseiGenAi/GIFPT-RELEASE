@@ -4,8 +4,12 @@ import com.gifpt.security.auth.user.CustomUserPrincipal;
 import com.gifpt.workspace.dto.WorkspaceResponse;
 import com.gifpt.workspace.dto.WorkspaceCreateFromFileRequest;
 import com.gifpt.workspace.service.WorkspaceService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,6 +31,20 @@ public class WorkspaceController {
             @RequestPart("pdf") MultipartFile pdf
     ) throws Exception {
         WorkspaceResponse resp = workspaceService.createWorkspace(user, title, prompt, pdf);
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * ✅ 3) 내 워크스페이스 목록 조회 (페이징)
+     * GET /api/v1/workspaces?page=0&size=10
+     */
+    @GetMapping
+    public ResponseEntity<Page<WorkspaceResponse>> getMyWorkspaces(
+            @AuthenticationPrincipal CustomUserPrincipal user,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC)
+            Pageable pageable
+    ) {
+        Page<WorkspaceResponse> resp = workspaceService.getMyWorkspaces(user.getId(), pageable);
         return ResponseEntity.ok(resp);
     }
 
