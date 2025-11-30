@@ -7,13 +7,13 @@ import re
 from pathlib import Path
 import logging
 
-from ai.llm_domain import call_llm_detect_domain
-from ai.llm import call_llm_domain_ir
-from ai.render_cnn_matrix import render_cnn_matrix
-from ai.llm_pseudocode import call_llm_pseudocode_ir, call_llm_sort_trace
-from ai.llm_anim_ir import call_llm_anim_ir
-from ai.llm_codegen import call_llm_codegen
-from ai.render_sorting import render_sorting
+from studio.ai.llm_domain import call_llm_detect_domain
+from studio.ai.llm import call_llm_domain_ir
+from studio.ai.render_cnn_matrix import render_cnn_matrix
+from studio.ai.llm_pseudocode import call_llm_pseudocode_ir, call_llm_sort_trace
+from studio.ai.llm_anim_ir import call_llm_anim_ir
+from studio.ai.llm_codegen import call_llm_codegen
+from studio.ai.render_sorting import render_sorting
 
 logger = logging.getLogger(__name__)
 
