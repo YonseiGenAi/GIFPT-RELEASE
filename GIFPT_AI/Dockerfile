@@ -1,4 +1,3 @@
-# gifpt_ai/Dockerfile
 FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -6,11 +5,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PATH="/home/appuser/.local/bin:$PATH"
 
-# 시스템 라이브러리 (Pillow/psycopg/mysqlclient 대비)
+# 시스템 라이브러리 (Pillow/psycopg/mysqlclient + manim/pycairo 대비)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gcc \
     libjpeg62-turbo-dev zlib1g-dev \
     libpq-dev default-libmysqlclient-dev curl \
+    pkg-config libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-0 libffi-dev \
+    ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -27,8 +28,4 @@ COPY . /app
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
-# 기본 포트 (Django)
 EXPOSE 8000
-
-# 헬스체크는 docker-compose에서 해도 됨
-# CMD/ENTRYPOINT는 compose에서 command로 덮어씌우니 비워둔다.
