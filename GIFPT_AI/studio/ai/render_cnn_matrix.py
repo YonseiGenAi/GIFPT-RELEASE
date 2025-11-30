@@ -34,6 +34,14 @@ class CNNParamScene(Scene):
         cfg = json.loads(r'''__CFG_JSON__''')
         random.seed(cfg.get("seed", 7))
 
+        def to_int(value, default):
+            if value is None:
+                return default
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
         input_size  = int(cfg.get("input_size", 4))
         kernel_size = int(cfg.get("kernel_size", 3))
         stride      = int(cfg.get("stride", 1))
