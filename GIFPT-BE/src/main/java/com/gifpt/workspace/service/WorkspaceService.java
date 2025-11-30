@@ -9,7 +9,7 @@ import com.gifpt.user.domain.User;
 import com.gifpt.user.repository.UserRepository;
 import com.gifpt.workspace.domain.Workspace;
 import com.gifpt.workspace.dto.WorkspaceResponse;
-import com.gifpt.workspace.dto.WorkspaceSummaryResponse;
+import com.gifpt.workspace.dto.ChatResponse;
 import com.gifpt.workspace.repository.WorkspaceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,7 +37,7 @@ public class WorkspaceService {
     private final AnalysisJobRepository analysisJobRepository;
     private final UserRepository userRepository;
     private final UploadedFileRepository uploadedFileRepository;
-
+    private final WorkspaceChatAiClient workspaceChatAiClient;
 
     private final RestClient.Builder restClientBuilder;
 
@@ -248,5 +248,35 @@ public class WorkspaceService {
         var page = workspaceRepository.findByOwnerId(userId, pageable);
 
         return page.map(this::toDto);
+    }
+
+    public ChatResponse chatOnWorkspace(Long userId, Long workspaceId, String message) {
+        Workspace ws = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new IllegalArgumentException("Workspace not found"));
+    
+        if (!ws.getOwner().getId().equals(userId)) {
+            throw new IllegalArgumentException("Forbidden workspace");
+        }
+    
+        // 요약/원래 프롬프트 가져오기
+        String summary = ws.getSummary();       // 분석 결과 요약
+        String userPrompt = ws.getPrompt();     // 처음에 사용자가 넣은 프롬프트
+    
+        if (summary == null) {
+            // 아직 분석 안 끝난 경우
+            throw new IllegalStateException("Analysis not completed yet for this workspace.");
+        }
+    
+        // pdf 원문을 나중에 넣고 싶으면 여기서 조회해서 넘기면 됨
+        String pdfText = null;
+    
+        String answer = workspaceChatAiClient.askWithContext(
+                userPrompt,
+                summary,
+                pdfText,
+                message
+        );
+    
+        return new ChatResponse(answer);
     }
 }
