@@ -33,6 +33,10 @@ IMPORTANT RULES:
 - NEVER compare color objects or convert them to strings.
 - If you need a custom color, write: `color="#abcdef"`, not `hex2color()`.
 - Avoid helper functions that redefine color or gradient handling.
+- Do NOT use `Group()` at all. Use only `VGroup` for grouping.
+- Never pass a `Group`, `Scene`, or other non-VMobject into `VGroup`.
+  Every child of `VGroup` must be a VMobject such as `Square`, `Circle`,
+  `Rectangle`, `Line`, `Arrow`, `Text`, `MathTex`, `VGroup`, etc.
 
 
 Style rules you MUST follow:
