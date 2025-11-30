@@ -21,6 +21,7 @@ import com.gifpt.file.repository.UploadedFileRepository;
 import org.springframework.http.MediaType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -278,5 +279,24 @@ public class WorkspaceService {
         );
     
         return new ChatResponse(answer);
+    }
+
+    @Transactional
+    public void deleteWorkspace(Long workspaceId, Long userId) {
+        Workspace ws = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new IllegalArgumentException("Workspace not found"));
+
+        // 🔒 소유자 체크
+        if (!ws.getOwner().getId().equals(userId)) {
+            throw new IllegalArgumentException("Forbidden workspace");
+        }
+
+        // TODO: 필요하면 여기서
+        //  - 로컬/ S3에 저장된 PDF/영상 삭제
+        //  - AnalysisJob도 같이 삭제(연관관계 cascade 설정 여부에 따라)
+        // 같은 후처리를 넣을 수 있음
+
+        workspaceRepository.delete(ws);
+        log.info("🗑️ Workspace {} deleted by user {}", workspaceId, userId);
     }
 }

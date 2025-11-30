@@ -92,4 +92,14 @@ public class WorkspaceController {
         );
         return ResponseEntity.ok(resp);
     }
+
+    // ✅ 워크스페이스 삭제
+    @DeleteMapping("/{workspaceId}")
+    public ResponseEntity<Void> deleteWorkspace(
+            @AuthenticationPrincipal CustomUserPrincipal user,
+            @PathVariable Long workspaceId
+    ) {
+        workspaceService.deleteWorkspace(workspaceId, user.getId());
+        return ResponseEntity.noContent().build(); // 204
+    }
 }
