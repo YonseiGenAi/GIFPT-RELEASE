@@ -6,12 +6,12 @@ import requests
 import base64
 import json
 from io import BytesIO
-import shutil
-import time
 from typing import Optional
 
 from celery import shared_task
 from django.conf import settings
+from studio.video_render import render_video_from_instructions
+from studio.s3_utils import upload_to_s3
 
 from openai import OpenAI
 import fitz  # PyMuPDF
@@ -23,41 +23,7 @@ SPRING_CALLBACK_BASE = os.environ.get("SPRING_CALLBACK_BASE", "http://spring:808
 UPLOAD_DIR = os.environ.get("GIFPT_UPLOAD_DIR", "/data/uploads")
 RESULT_DIR = os.environ.get("GIFPT_RESULT_DIR", "/data/results")
 
-DEMO_API_KEY = os.environ.get("DEMO_API_KEY")  # optional
-
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-
-def _extract_video_path_from_demo(resp_json: dict) -> Optional[str]:
-    """Try common keys to get video path from demo /generate response."""
-    if not isinstance(resp_json, dict):
-        return None
-    return (
-        resp_json.get("video_path")
-        or resp_json.get("output")
-        or resp_json.get("output_path")
-        or (resp_json.get("media") or {}).get("video")
-    )
-
-
-def call_demo_generate(user_text: str, timeout: int = 300) -> dict:
-    """
-    Call demo service /generate with given text and return JSON.
-    Raises on non-2xx.
-    """
-    url = f"{SPRING_CALLBACK_BASE}/generate"
-    headers = {"Content-Type": "application/json"}
-    if DEMO_API_KEY:
-        headers["Authorization"] = f"Bearer {DEMO_API_KEY}"
-    payload = {"text": user_text}
-    t0 = time.perf_counter()
-    logger.info("Calling demo /generate: %s", url)
-    r = requests.post(url, json=payload, headers=headers, timeout=timeout)
-    dt = time.perf_counter() - t0
-    logger.info("demo /generate status=%s time=%.2fs", r.status_code, dt)
-    r.raise_for_status()
-    return r.json()
-
 
 def pdf_to_base64_images(pdf_path):
     """
@@ -214,83 +180,72 @@ Return your response in JSON format:
 @shared_task(name="studio.analyze_pdf_vision")
 def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
     """
-    Celery task: Analyze PDF using vision model.
-    - jobId, pdf path, user prompt
-    - Convert PDF to images
-    - Generate summary + video instructions using OpenAI vision
-    - Call demo /generate to render video
-    - Spring callback with results
+    1) PDF → base64 이미지 리스트
+    2) OpenAI Vision으로 summary + video_instructions 생성
+    3) video_instructions 기반 영상 렌더
+    4) S3 업로드 후 video_url 획득
+    5) Spring /api/v1/analysis/{jobId}/complete 로 SUCCESS/FAILED 콜백
     """
-    logger.info("analyze_pdf_vision started job_id=%s input_path=%s", job_id, file_path)
-
-    # Handle relative vs absolute paths
-    if not os.path.isabs(file_path):
-        # 🔥 avoid duplicated 'uploads/' prefix
-        cleaned = file_path.replace("uploads/", "", 1)
-        pdf_path = os.path.join(UPLOAD_DIR, cleaned)
-    else:
-        pdf_path = file_path
+    logger.info("===== analyze_pdf_vision started job_id=%s file=%s =====",
+                job_id, file_path)
 
     try:
-        # 1) Convert PDF to base64 images
-        base64_images = pdf_to_base64_images(pdf_path)
-        
+        # 1) PDF → base64 이미지들
+        base64_images = pdf_to_base64_images(file_path)
         if not base64_images:
-            raise Exception("Failed to convert PDF to images")
+            raise RuntimeError("Failed to convert PDF to images")
 
-        # 2) Generate AI summary with vision model
-        result = generate_summary_from_images(base64_images, prompt)
-        
-        if not result:
-            raise Exception("Failed to generate summary from images")
+        # 2) OpenAI Vision 호출 (JSON: {summary, video_instructions})
+        ai_result = generate_summary_from_images(base64_images, user_prompt=prompt)
+        if not ai_result:
+            raise RuntimeError("Failed to generate summary from images")
 
-        # Combine summary and video instructions into continuous text
-        continuous_text = (result.get('summary', '') + ' ' + result.get('video_instructions', '')).strip()
+        summary_text = ai_result.get("summary")
+        video_instructions = ai_result.get("video_instructions")
 
-        # 3) Call demo pipeline to render video from text
-        demo_resp = call_demo_generate(continuous_text)
-        logger.info("demo response keys: %s", list(demo_resp.keys()))
-        video_src = _extract_video_path_from_demo(demo_resp)
-        if not video_src:
-            raise Exception("demo returned no video_path")
-        if not os.path.exists(video_src):
-            # If demo runs in another container, consider a shared volume or URL fetch
-            logger.warning("video path not found locally: %s", video_src)
+        if not summary_text or not video_instructions:
+            raise RuntimeError(f"Invalid AI result: {ai_result}")
 
-        # 4) Copy video into RESULT_DIR (for Spring serving)
-        os.makedirs(RESULT_DIR, exist_ok=True)
-        result_rel = f"{job_id}_result.mp4"
-        result_abs = os.path.join(RESULT_DIR, result_rel)
-        try:
-            shutil.copyfile(video_src, result_abs)
-            logger.info("copied video to %s", result_abs)
-        except Exception as copy_err:
-            logger.warning("copy failed (%s), using original path", copy_err)
-            result_abs = video_src
-            result_rel = os.path.basename(video_src)
+        logger.info("==== OpenAI Summary BEGIN ====")
+        logger.info(summary_text)
+        logger.info("==== OpenAI Summary END ====")
 
-        result_url = result_rel
+        logger.info("==== OpenAI Video Instructions BEGIN ====")
+        logger.info(video_instructions)
+        logger.info("==== OpenAI Video Instructions END ====")
 
-        callback_payload = {
+        # 3) 🎬 영상 렌더 (Manim/FFmpeg 등은 render_video_from_instructions 내부에서 처리)
+        video_local_path = render_video_from_instructions(video_instructions)
+        logger.info("🎬 video rendered at %s", video_local_path)
+
+        # 4) 📤 S3 업로드
+        video_url = upload_to_s3(video_local_path)
+        logger.info("📤 uploaded to S3: %s", video_url)
+
+        # 5) Spring에 SUCCESS 콜백
+        callback_body = {
             "status": "SUCCESS",
-            "resultUrl": result_url,
-            "summary": continuous_text,
+            "summary": summary_text,
+            "resultUrl": video_url,
             "errorMessage": None,
         }
 
     except Exception as e:
         logger.exception("analyze_pdf_vision failed job_id=%s", job_id)
-        callback_payload = {
+
+        callback_body = {
             "status": "FAILED",
-            "resultUrl": None,
             "summary": None,
+            "resultUrl": None,
             "errorMessage": str(e),
         }
 
-    # 5) Spring callback
+    # 6) 공통 콜백 호출
+    callback_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
+    logger.info("calling spring callback %s body=%s", callback_url, callback_body)
+
     try:
-        cb_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
-        logger.info("calling spring callback %s with %s", cb_url, callback_payload["status"])
-        requests.post(cb_url, json=callback_payload, timeout=10)
+        resp = requests.post(callback_url, json=callback_body, timeout=10)
+        logger.info("spring callback status=%s", resp.status_code)
     except Exception:
-        logger.exception("failed to callback spring for job_id=%s", job_id)
+        logger.exception("spring callback failed job_id=%s", job_id)
