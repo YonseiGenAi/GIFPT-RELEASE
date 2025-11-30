@@ -4,6 +4,7 @@ import os
 import json
 import tempfile
 import subprocess
+import shutil
 from pathlib import Path
 
 BASE_RESULT_DIR = Path(os.environ.get("GIFPT_RESULT_DIR", "/tmp/gifpt_results"))
@@ -415,12 +416,41 @@ class CNNParamScene(Scene):
 
     scene_code = scene_template.replace("__CFG_JSON__", json.dumps(cfg))
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
+    # 💡 임시 파일은 MEDIA_DIR 안에 만들면 깔끔
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", delete=False, dir=MEDIA_DIR
+    ) as tmp:
         tmp.write(scene_code)
         tmp_path = tmp.name
 
-    cmd = ["manim", "-ql", tmp_path, "CNNParamScene", "--format", fmt, "-o", f"{out_basename}.{fmt}"]
-    subprocess.run(cmd, check=True)
+    cmd = [
+        "manim",
+        "-ql",
+        tmp_path,
+        "CNNParamScene",
+        "--format",
+        fmt,
+        "-o",
+        f"{out_basename}.{fmt}",
+    ]
 
-    video_path = MEDIA_DIR / f"{out_basename}.{fmt}"
-    return str(video_path)
+    # 📌 manim이 만드는 media/... 구조를 WORK_DIR 아래에 생성하도록 cwd 고정
+    subprocess.run(cmd, check=True, cwd=MEDIA_DIR)
+
+    # manim이 실제로 만든 파일 위치 찾아서
+    # WORK_DIR / "media/videos/**/cnn_param_demo.mp4" 중 첫 번째 것을 사용
+    matches = list(MEDIA_DIR.glob(f"media/videos/**/{out_basename}.{fmt}"))
+    if not matches:
+        raise FileNotFoundError(
+            f"Manim output not found under {MEDIA_DIR}/media/videos for {out_basename}.{fmt}"
+        )
+
+    generated_path = matches[0]
+
+    # ✅ 우리가 S3에 올리고 싶어하는 최종 경로
+    final_path = MEDIA_DIR / f"{out_basename}.{fmt}"
+    # 복사(또는 shutil.move 써도 됨)
+    shutil.copy(generated_path, final_path)
+
+    return str(final_path)
+
