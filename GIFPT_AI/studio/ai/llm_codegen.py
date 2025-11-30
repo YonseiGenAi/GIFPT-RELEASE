@@ -24,7 +24,7 @@ Below is a **reference example** of excellent Manim code style
 (from render_cnn_matrix). Follow this level of structure, clarity, and animation pacing.
 
 <reference_example>
-{reference_code}
+{CNN_REFERENCE}
 </reference_example>
 
 IMPORTANT RULES:
