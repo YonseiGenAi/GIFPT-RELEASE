@@ -1,8 +1,7 @@
-# ai/llm_codegen.py
+# app/llm_codegen.py
 import os, json, re
 from openai import OpenAI
 from dotenv import load_dotenv
-from pathlib import Path
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -23,13 +22,9 @@ VALID_MANIM_COLORS = [
     "LIGHT_PINK", "PURE_RED", "PURE_GREEN", "PURE_BLUE"
 ]
 
-BASE_DIR = Path(__file__).resolve().parent
-
-# 같은 폴더에 있는 render_cnn_matrix.py 를 참조
-REFERENCE_PATH = BASE_DIR / "render_cnn_matrix.py"
-
+REFERENCE_PATH = "app/render_cnn_matrix.py"
 with open(REFERENCE_PATH, "r", encoding="utf-8") as f:
-    CNN_REFERENCE = f.read()
+    reference_code = f.read()
 
 SYSTEM_PROMPT = f"""
 You are a Manim code generator.
@@ -40,7 +35,7 @@ Below is a **reference example** of excellent Manim code style
 (from render_cnn_matrix). Follow this level of structure, clarity, and animation pacing.
 
 <reference_example>
-{CNN_REFERENCE}
+{reference_code}
 </reference_example>
 
 CRITICAL COLOR RULES:
@@ -148,6 +143,8 @@ Output:
 - Do not include markdown (no ```python or ```).
 - Code must be directly executable by `manim`.
 """
+
+
 
 def call_llm_codegen(anim_ir: dict):
     prompt = build_prompt_codegen(anim_ir)
