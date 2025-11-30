@@ -32,7 +32,7 @@ def render_sorting(trace_ir: dict,
     scene_template = r"""
 from manim import *
 import json
-from app.layout_utils import (
+from ai.layout_utils import (
     create_circle_node,
     layout_row,
     autorescale_group,
