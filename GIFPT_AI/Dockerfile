@@ -12,6 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev default-libmysqlclient-dev curl \
     pkg-config libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-0 libffi-dev \
     ffmpeg \
+    texlive-latex-base \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
+    texlive-fonts-extra \
+    dvipng \
+    dvisvgm \
+    ghostscript \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
