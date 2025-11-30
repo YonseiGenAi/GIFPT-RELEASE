@@ -37,7 +37,7 @@ PROJECT_ROOT = r"__PROJECT_ROOT__"
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from app.layout_utils import (
+from ai.layout_utils import (
     create_circle_node,
     layout_row,
     autorescale_group,
