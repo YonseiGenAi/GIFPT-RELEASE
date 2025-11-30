@@ -9,24 +9,21 @@ S3_REGION = "ap-northeast-2"        # seoul이면 이거
 
 s3 = boto3.client("s3", region_name=S3_REGION)
 
-def upload_to_s3(local_path: str) -> str:
-    """
-    로컬 mp4 파일을 S3에 업로드하고, 접근 가능한 URL을 리턴.
-    버킷 권한에 따라 public URL / presigned URL 중 택1.
-    """
-    suffix = Path(local_path).suffix or ".mp4"
-    key = f"videos/{uuid.uuid4()}{suffix}"
+def upload_to_s3(file_path: str) -> str:
+    s3 = boto3.client("s3")
+    bucket = "gifpt-s3"
+    key = f"videos/{uuid.uuid4()}.mp4"
 
+    # ✅ ACL 제거, ContentType 정도만 유지
     s3.upload_file(
-        local_path,
-        S3_BUCKET,
+        file_path,
+        bucket,
         key,
         ExtraArgs={
-            "ContentType": "video/mp4",
-            # public 버킷이면:
-            "ACL": "public-read",
+            "ContentType": "video/mp4"
         }
     )
 
-    # 퍼블릭 버킷 기준 URL
-    return f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{key}"
+    # presigned URL 쓰거나, CloudFront/S3 도메인 조합해서 URL 반환
+    return f"https://{bucket}.s3.amazonaws.com/{key}"
+    
