@@ -220,8 +220,7 @@ class SortingScene(Scene, LayoutMixin):
         "manim",
         str(py_path),
         "SortingScene",
-        "-ql",  
-        "-o",
+        "-ql",
     ]
 
     env = os.environ.copy()
