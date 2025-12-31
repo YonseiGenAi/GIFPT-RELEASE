@@ -232,6 +232,16 @@ def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
             "errorMessage": None,
         }
 
+        # 6) 공통 콜백 호출
+        callback_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
+        logger.info("calling spring callback %s body=%s", callback_url, callback_body)
+
+        try:
+            resp = requests.post(callback_url, json=callback_body, timeout=10)
+            logger.info("spring callback status=%s", resp.status_code)
+        except Exception:
+            logger.exception("spring callback failed job_id=%s", job_id)
+
     except Exception as e:
         logger.exception("analyze_pdf_vision failed job_id=%s", job_id)
 
@@ -241,6 +251,17 @@ def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
             "resultUrl": None,
             "errorMessage": str(e),
         }
+
+        # 6) 공통 콜백 호출
+        callback_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
+        logger.info("calling spring callback %s body=%s", callback_url, callback_body)
+
+        try:
+            resp = requests.post(callback_url, json=callback_body, timeout=10)
+            logger.info("spring callback status=%s", resp.status_code)
+        except Exception:
+            logger.exception("spring callback failed job_id=%s", job_id)
+
     finally:
         task_end = time.time()
         elapsed = task_end - task_start
@@ -251,13 +272,3 @@ def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
             elapsed,
             len(base64_images) if 'base64_images' in locals() else -1
         )
-
-    # 6) 공통 콜백 호출
-    callback_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
-    logger.info("calling spring callback %s body=%s", callback_url, callback_body)
-
-    try:
-        resp = requests.post(callback_url, json=callback_body, timeout=10)
-        logger.info("spring callback status=%s", resp.status_code)
-    except Exception:
-        logger.exception("spring callback failed job_id=%s", job_id)
