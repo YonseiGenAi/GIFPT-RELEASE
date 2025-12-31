@@ -53,12 +53,15 @@ public class WorkspaceService {
      * 2) AnalysisJob 생성 + Django에 분석 요청
      * 3) Workspace 생성
      */
+    @Transactional
     public WorkspaceResponse createWorkspace(
             CustomUserPrincipal principal,
             String title,
             String prompt,
             MultipartFile pdf
     ) throws IOException {
+        long requestStart = System.currentTimeMillis();
+        log.info("[REQUEST START] createWorkspace userId={}", principal.getId());
 
         User owner = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
@@ -103,6 +106,13 @@ public class WorkspaceService {
                 .build();
 
         workspaceRepository.save(workspace);
+
+        long requestEnd = System.currentTimeMillis();
+        log.info(
+                "[REQUEST END] createWorkspace workspaceId={} elapsed={}ms",
+                workspace.getId(),
+                (requestEnd - requestStart)
+            );
 
         return toDto(workspace);
     }

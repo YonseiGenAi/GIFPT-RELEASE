@@ -7,6 +7,7 @@ import base64
 import json
 from io import BytesIO
 from typing import Optional
+import time
 
 from celery import shared_task
 from django.conf import settings
@@ -186,6 +187,7 @@ def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
     4) S3 업로드 후 video_url 획득
     5) Spring /api/v1/analysis/{jobId}/complete 로 SUCCESS/FAILED 콜백
     """
+    task_start = time.time()
     logger.info("===== analyze_pdf_vision started job_id=%s file=%s =====",
                 job_id, file_path)
 
@@ -239,6 +241,16 @@ def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
             "resultUrl": None,
             "errorMessage": str(e),
         }
+    finally:
+        task_end = time.time()
+        elapsed = task_end - task_start
+
+        logger.info(
+            "[TASK END] job_id=%s elapsed=%.2fs pages=%d",
+            job_id,
+            elapsed,
+            len(base64_images) if 'base64_images' in locals() else -1
+        )
 
     # 6) 공통 콜백 호출
     callback_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
