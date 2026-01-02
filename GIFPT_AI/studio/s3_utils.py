@@ -4,14 +4,14 @@ import uuid
 from pathlib import Path
 import boto3
 
-S3_BUCKET = "gifpt-s3"          # 네가 만든 버킷 이름
-S3_REGION = "ap-northeast-2"        # seoul이면 이거
+S3_BUCKET = "gifpt-demo"          # 네가 만든 버킷 이름
+S3_REGION = "us-east-1"        # seoul이면 이거
 
 s3 = boto3.client("s3", region_name=S3_REGION)
 
 def upload_to_s3(file_path: str) -> str:
     s3 = boto3.client("s3")
-    bucket = "gifpt-s3"
+    bucket = "gifpt-demo"
     key = f"videos/{uuid.uuid4()}.mp4"
 
     # ✅ ACL 제거, ContentType 정도만 유지

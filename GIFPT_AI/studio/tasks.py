@@ -177,54 +177,226 @@ Return your response in JSON format:
         logger.error(f"Error generating summary: {str(e)}")
         return None
 
+def summarize_image_batch(client, images, prompt, batch_idx):
+    """
+    images: List[PIL.Image]
+    """
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an expert AI tutor. "
+                "Summarize the following PDF pages clearly and concisely. "
+                "Focus on formulas, definitions, and key explanations."
+            ),
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": f"[Batch {batch_idx}] {prompt}"},
+                *[
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": img},
+                    }
+                    for img in images
+                ],
+            ],
+        },
+    ]
+
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        temperature=0.2,
+    )
+
+    return completion.choices[0].message.content
 
 @shared_task(name="studio.analyze_pdf_vision")
 def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
     """
     1) PDF → base64 이미지 리스트
-    2) OpenAI Vision으로 summary + video_instructions 생성
-    3) video_instructions 기반 영상 렌더
-    4) S3 업로드 후 video_url 획득
-    5) Spring /api/v1/analysis/{jobId}/complete 로 SUCCESS/FAILED 콜백
+    2) Vision batch(gpt-4o-mini)로 "텍스트만" 부분 요약 생성 (JSON/비디오 지시 X)
+    3) 부분 요약들을 텍스트 모델(gpt-4o)로 합쳐 최종 {summary, video_instructions} JSON 생성
+    4) video_instructions 기반 영상 렌더
+    5) S3 업로드
+    6) Spring 콜백
     """
     task_start = time.time()
-    logger.info("===== analyze_pdf_vision started job_id=%s file=%s =====",
-                job_id, file_path)
+    logger.info("===== analyze_pdf_vision started job_id=%s file=%s =====", job_id, file_path)
+
+    base64_images = None
+    callback_body = None
+
+    # -----------------------------
+    # config (여기만 조절하면 됨)
+    # -----------------------------
+    VISION_MODEL = "gpt-4o-mini"   # ✅ 배치 비전은 mini로
+    FINAL_MODEL = "gpt-4o"         # ✅ 최종 합치기/비디오 지시는 여기서만
+    VISION_BATCH_SIZE = 5          # ✅ 안전빵(5도 가능하지만 터지면 3으로)
+    VISION_MAX_TOKENS = 500        # ✅ 부분요약 길이 제한(토큰 폭주 방지)
+    FINAL_MAX_TOKENS = 2200        # ✅ 최종 JSON 길이 제한
+    BETWEEN_BATCH_SLEEP_SEC = 0.2  # ✅ 짧은 텀(너무 빠르면 RPM도 터짐)
+
+    def chunked(lst, size):
+        for i in range(0, len(lst), size):
+            yield lst[i:i + size]
+
+    def to_data_url(img_base64: str) -> str:
+        # base64 문자열(순수 base64) → data url
+        if img_base64.startswith("data:image/"):
+            return img_base64
+        return f"data:image/png;base64,{img_base64}"
+
+    def summarize_vision_batch(image_batch_base64: list[str], user_request: str, batch_idx: int) -> str:
+        """
+        ✅ 배치 단계: '텍스트만' 뽑기 (JSON X, video_instructions X)
+        """
+        content = [{"type": "text", "text": (
+            f"[Batch {batch_idx}] 아래 페이지들만 보고, 수식/정의/핵심 개념을 정보밀도 높게 요약해.\n"
+            f"- 전체 문서 요약 금지\n"
+            f"- 중요한 수식은 가능하면 그대로 적기\n"
+            f"- 불릿으로 써도 됨\n"
+            f"사용자 요청(참고): {user_request}"
+        )}]
+
+        for b64 in image_batch_base64:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": to_data_url(b64)},
+            })
+
+        resp = client.chat.completions.create(
+            model=VISION_MODEL,
+            messages=[
+                {"role": "system", "content": "You are an expert AI tutor. Extract formulas, definitions, and key explanations from these pages only."},
+                {"role": "user", "content": content},
+            ],
+            temperature=0.2,
+            max_tokens=VISION_MAX_TOKENS,
+        )
+        return (resp.choices[0].message.content or "").strip()
+
+    def generate_final_json(partial_summaries: list[str], user_request: str) -> dict:
+        """
+        ✅ 최종 단계: 텍스트만으로 {summary, video_instructions} JSON 만들기
+        """
+        # 부분요약이 너무 길면 TPM/RPM 다 터짐 → 합치기 전에 살짝 다이어트
+        # (너무 aggressive 하면 정보 손실이라, 여기선 "상한"만 걸자)
+        trimmed = []
+        for s in partial_summaries:
+            s = (s or "").strip()
+            if len(s) > 6000:
+                s = s[:6000] + " ..."
+            trimmed.append(s)
+
+        final_prompt = f"""
+You are given partial summaries extracted from different parts of a PDF.
+
+User request:
+{user_request}
+
+Task:
+1) Merge all partial summaries into ONE coherent global summary.
+   - MUST be one continuous flowing text
+   - MUST include a concrete example starting with EXACTLY: "For an example"
+   - No line breaks in the summary (replace newlines with spaces)
+2) Generate detailed video_instructions for animation rendering.
+   - Respect any user numerical constraints EXACTLY as written (stride/padding/kernel_size/etc.)
+   - If ambiguous, mention ambiguity in video_instructions.
+
+Partial summaries (ordered):
+{chr(10).join([f"- {t}" for t in trimmed])}
+
+Return JSON ONLY with keys: summary, video_instructions
+"""
+
+        resp = client.chat.completions.create(
+            model=FINAL_MODEL,
+            messages=[
+                {"role": "system", "content": "You output STRICT JSON with keys: summary, video_instructions."},
+                {"role": "user", "content": final_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=FINAL_MAX_TOKENS,
+            response_format={"type": "json_object"},
+        )
+
+        result = json.loads(resp.choices[0].message.content.strip())
+
+        # summary/video_instructions 개행 제거(기존 니 요구 유지)
+        if "summary" in result and isinstance(result["summary"], str):
+            result["summary"] = result["summary"].replace("\n", " ").strip()
+        if "video_instructions" in result and isinstance(result["video_instructions"], str):
+            result["video_instructions"] = result["video_instructions"].replace("\n", " ").strip()
+
+        return result
 
     try:
-        # 1) PDF → base64 이미지들
+        # -------------------------------------------------
+        # 1) PDF → base64 images
+        # -------------------------------------------------
         base64_images = pdf_to_base64_images(file_path)
         if not base64_images:
             raise RuntimeError("Failed to convert PDF to images")
 
-        # 2) OpenAI Vision 호출 (JSON: {summary, video_instructions})
-        ai_result = generate_summary_from_images(base64_images, user_prompt=prompt)
-        if not ai_result:
-            raise RuntimeError("Failed to generate summary from images")
+        logger.info("PDF converted: %d pages", len(base64_images))
 
-        summary_text = ai_result.get("summary")
-        video_instructions = ai_result.get("video_instructions")
+        # -------------------------------------------------
+        # 2) Vision batch 요약 (gpt-4o-mini, 텍스트만)
+        # -------------------------------------------------
+        partial_summaries: list[str] = []
+        for batch_idx, image_batch in enumerate(chunked(base64_images, VISION_BATCH_SIZE), start=1):
+            logger.info("🧩 Vision batch %d (%d pages)", batch_idx, len(image_batch))
 
-        if not summary_text or not video_instructions:
-            raise RuntimeError(f"Invalid AI result: {ai_result}")
+            part_text = summarize_vision_batch(
+                image_batch_base64=image_batch,
+                user_request=prompt,
+                batch_idx=batch_idx,
+            )
 
-        logger.info("==== OpenAI Summary BEGIN ====")
+            if not part_text:
+                raise RuntimeError(f"Vision batch {batch_idx} produced empty summary")
+
+            partial_summaries.append(part_text)
+
+            if BETWEEN_BATCH_SLEEP_SEC > 0:
+                time.sleep(BETWEEN_BATCH_SLEEP_SEC)
+
+        logger.info("Vision batches completed: %d partial summaries", len(partial_summaries))
+
+        # -------------------------------------------------
+        # 3) 부분요약 → 최종 JSON(summary + video_instructions)
+        # -------------------------------------------------
+        final_result = generate_final_json(partial_summaries, prompt)
+
+        if not final_result.get("summary") or not final_result.get("video_instructions"):
+            raise RuntimeError(f"Invalid final JSON result: {final_result}")
+
+        summary_text = final_result["summary"]
+        video_instructions = final_result["video_instructions"]
+
+        logger.info("==== Final Summary BEGIN ====")
         logger.info(summary_text)
-        logger.info("==== OpenAI Summary END ====")
+        logger.info("==== Final Summary END ====")
 
-        logger.info("==== OpenAI Video Instructions BEGIN ====")
+        logger.info("==== Video Instructions BEGIN ====")
         logger.info(video_instructions)
-        logger.info("==== OpenAI Video Instructions END ====")
+        logger.info("==== Video Instructions END ====")
 
-        # 3) 🎬 영상 렌더 (Manim/FFmpeg 등은 render_video_from_instructions 내부에서 처리)
+        # -------------------------------------------------
+        # 4) 영상 렌더
+        # -------------------------------------------------
         video_local_path = render_video_from_instructions(video_instructions)
         logger.info("🎬 video rendered at %s", video_local_path)
 
-        # 4) 📤 S3 업로드
+        # -------------------------------------------------
+        # 5) S3 업로드
+        # -------------------------------------------------
         video_url = upload_to_s3(video_local_path)
         logger.info("📤 uploaded to S3: %s", video_url)
 
-        # 5) Spring에 SUCCESS 콜백
         callback_body = {
             "status": "SUCCESS",
             "summary": summary_text,
@@ -232,19 +404,8 @@ def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
             "errorMessage": None,
         }
 
-        # 6) 공통 콜백 호출
-        callback_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
-        logger.info("calling spring callback %s body=%s", callback_url, callback_body)
-
-        try:
-            resp = requests.post(callback_url, json=callback_body, timeout=10)
-            logger.info("spring callback status=%s", resp.status_code)
-        except Exception:
-            logger.exception("spring callback failed job_id=%s", job_id)
-
     except Exception as e:
-        logger.exception("analyze_pdf_vision failed job_id=%s", job_id)
-
+        logger.exception("[TASK] failed job_id=%s", job_id)
         callback_body = {
             "status": "FAILED",
             "summary": None,
@@ -252,23 +413,19 @@ def analyze_pdf_vision(job_id: int, file_path: str, prompt: str):
             "errorMessage": str(e),
         }
 
-        # 6) 공통 콜백 호출
-        callback_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
-        logger.info("calling spring callback %s body=%s", callback_url, callback_body)
-
-        try:
-            resp = requests.post(callback_url, json=callback_body, timeout=10)
-            logger.info("spring callback status=%s", resp.status_code)
-        except Exception:
-            logger.exception("spring callback failed job_id=%s", job_id)
-
     finally:
-        task_end = time.time()
-        elapsed = task_end - task_start
+        elapsed = time.time() - task_start
+        page_count = len(base64_images) if base64_images else -1
+        logger.info("[TASK END] job_id=%s elapsed=%.2fs pages=%d", job_id, elapsed, page_count)
 
-        logger.info(
-            "[TASK END] job_id=%s elapsed=%.2fs pages=%d",
-            job_id,
-            elapsed,
-            len(base64_images) if 'base64_images' in locals() else -1
-        )
+    # -------------------------------------------------
+    # 6) Spring callback (single exit)
+    # -------------------------------------------------
+    callback_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
+    logger.info("[CALLBACK] POST %s body=%s", callback_url, callback_body)
+
+    try:
+        resp = requests.post(callback_url, json=callback_body, timeout=10)
+        logger.info("[CALLBACK] status=%s", resp.status_code)
+    except Exception:
+        logger.exception("[CALLBACK] failed job_id=%s", job_id)
