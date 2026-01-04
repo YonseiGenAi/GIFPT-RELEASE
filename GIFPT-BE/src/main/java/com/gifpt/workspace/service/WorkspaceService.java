@@ -118,6 +118,8 @@ public class WorkspaceService {
     }
 
     public WorkspaceResponse getWorkspace(Long workspaceId, Long userId) {
+        long start = System.currentTimeMillis();
+
         Workspace ws = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new IllegalArgumentException("Workspace not found"));
 
@@ -125,7 +127,18 @@ public class WorkspaceService {
             throw new IllegalArgumentException("Forbidden workspace");
         }
 
-        return toDto(ws);
+        WorkspaceResponse resp = toDto(ws);
+
+        long elapsed = System.currentTimeMillis() - start;
+        log.info(
+            "[WORKSPACE GET] workspaceId={} userId={} elapsed={}ms status={}",
+            workspaceId,
+            userId,
+            elapsed,
+            ws.getStatus()
+        );
+    
+        return resp;
     }
 
     /**
