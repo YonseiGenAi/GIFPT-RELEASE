@@ -1,18 +1,21 @@
 # GIFPT_AI/studio/tasks_vision.py
 
+import hashlib
 import os
 import logging
 import requests
 import base64
 import json
 from io import BytesIO
+from pathlib import Path
 from typing import Optional
 import time
 
+import boto3
 from celery import shared_task
 from django.conf import settings
-from studio.video_render import render_video_from_instructions
-from studio.s3_utils import upload_to_s3
+from studio.video_render import render_video_from_instructions, run_manim_code, RESULT_DIR
+from studio.s3_utils import upload_to_s3, S3_BUCKET, S3_REGION
 
 from openai import OpenAI
 import fitz  # PyMuPDF
@@ -429,3 +432,168 @@ Return JSON ONLY with keys: summary, video_instructions
         logger.info("[CALLBACK] status=%s", resp.status_code)
     except Exception:
         logger.exception("[CALLBACK] failed job_id=%s", job_id)
+
+
+# ---------------------------------------------------------------------------
+# animate_algorithm — direct algorithm-name → video pipeline (no PDF required)
+# ---------------------------------------------------------------------------
+
+def _s3_key_for_slug(slug: str) -> str:
+    """Deterministic S3 key: animations/SHA256(slug).mp4"""
+    digest = hashlib.sha256(slug.encode()).hexdigest()
+    return f"animations/{digest}.mp4"
+
+
+def _s3_object_exists(key: str) -> bool:
+    s3 = boto3.client("s3", region_name=S3_REGION)
+    try:
+        s3.head_object(Bucket=S3_BUCKET, Key=key)
+        return True
+    except s3.exceptions.ClientError:
+        return False
+    except Exception:
+        return False
+
+
+def _upload_to_s3_with_key(file_path: str, key: str) -> str:
+    s3 = boto3.client("s3", region_name=S3_REGION)
+    s3.upload_file(
+        file_path,
+        S3_BUCKET,
+        key,
+        ExtraArgs={"ContentType": "video/mp4"},
+    )
+    return f"https://{S3_BUCKET}.s3.amazonaws.com/{key}"
+
+
+@shared_task(name="studio.animate_algorithm")
+def animate_algorithm(job_id: int, algorithm: str):
+    """Generate a Manim animation for a named algorithm.
+
+    Flow:
+        normalize_slug → domain classify (LLM, 5s timeout) → ExampleLibrary
+        → few-shot codegen (gpt-4.1-mini) → run_manim_code → S3 (hash key)
+        → Spring callback
+
+    Error handling:
+        - openai.RateLimitError      : exponential backoff, max 3 retries
+        - subprocess.TimeoutExpired  : caught inside run_manim_code (fallback)
+        - requests.ConnectionError   : push job_id to Redis dead-letter key
+        - json.JSONDecodeError       : log + fall back to all examples
+    """
+    import openai
+    from django.core.cache import cache  # Django Redis cache backend
+    from studio.ai.example_library import normalize_slug, get_library
+    from studio.ai.llm_domain import call_llm_detect_domain
+    from studio.ai.patterns import DOMAIN_TO_PATTERN, PatternType
+    from studio.ai.llm_codegen import call_llm_codegen_for_algorithm
+
+    task_start = time.time()
+    logger.info("animate_algorithm started job_id=%s algorithm=%r", job_id, algorithm)
+
+    slug = normalize_slug(algorithm)
+    s3_key = _s3_key_for_slug(slug)
+    callback_body: dict = {}
+
+    try:
+        # 1) Cache check — return immediately if video already exists
+        if _s3_object_exists(s3_key):
+            video_url = f"https://{S3_BUCKET}.s3.amazonaws.com/{s3_key}"
+            logger.info("animate_algorithm cache HIT slug=%s", slug)
+            callback_body = {
+                "status": "SUCCESS",
+                "resultUrl": video_url,
+                "cache": "HIT",
+                "errorMessage": None,
+            }
+        else:
+            # 2) Domain classify → PatternType (5s timeout; fallback to all examples)
+            domain = None
+            pattern_type = None
+            try:
+                domain = call_llm_detect_domain(slug.replace("_", " "))
+                pattern_type = DOMAIN_TO_PATTERN.get(domain)
+            except Exception as exc:
+                logger.warning("animate_algorithm domain classify failed (%s) — using all examples", exc)
+
+            # 3) Retrieve few-shot examples
+            library = get_library()
+            examples = library.get_examples(pattern_type, top_k=3)
+            logger.info(
+                "animate_algorithm slug=%s domain=%s pattern=%s examples=%s",
+                slug, domain, pattern_type,
+                [e.get("tag") for e in examples],
+            )
+
+            # 4) Codegen with exponential backoff on rate limit
+            manim_code = None
+            for attempt in range(1, 4):
+                try:
+                    manim_code = call_llm_codegen_for_algorithm(algorithm, examples)
+                    break
+                except openai.RateLimitError:
+                    wait = 2 ** attempt  # 2s, 4s, 8s
+                    logger.warning("RateLimitError, retrying in %ds (attempt %d/3)", wait, attempt)
+                    time.sleep(wait)
+
+            if manim_code is None:
+                raise RuntimeError("Codegen failed after 3 rate-limit retries")
+
+            # 5) Render
+            render_start = time.perf_counter()
+            output_dir = RESULT_DIR / "animations"
+            output_name = f"{slug}.mp4"
+            video_local_path = run_manim_code(manim_code, output_dir, output_name)
+            render_time = time.perf_counter() - render_start
+
+            # 6) Upload to S3 with deterministic hash key
+            video_url = _upload_to_s3_with_key(video_local_path, s3_key)
+            logger.info(
+                "animate_algorithm",
+                extra={
+                    "algorithm": slug,
+                    "domain": domain,
+                    "pattern_type": str(pattern_type),
+                    "examples_used": [e.get("tag") for e in examples],
+                    "cache": "MISS",
+                    "render_time_s": round(render_time, 2),
+                    "job_id": job_id,
+                },
+            )
+
+            callback_body = {
+                "status": "SUCCESS",
+                "resultUrl": video_url,
+                "cache": "MISS",
+                "errorMessage": None,
+            }
+
+    except Exception as exc:
+        logger.exception("animate_algorithm failed job_id=%s", job_id)
+        callback_body = {
+            "status": "FAILED",
+            "resultUrl": None,
+            "cache": "MISS",
+            "errorMessage": str(exc),
+        }
+
+    finally:
+        elapsed = time.time() - task_start
+        logger.info("animate_algorithm done job_id=%s elapsed=%.2fs", job_id, elapsed)
+
+    # 7) Spring callback
+    callback_url = f"{SPRING_CALLBACK_BASE}/api/v1/analysis/{job_id}/complete"
+    try:
+        resp = requests.post(callback_url, json=callback_body, timeout=10)
+        logger.info("[ANIMATE_CALLBACK] status=%s job_id=%s", resp.status_code, job_id)
+    except requests.ConnectionError:
+        dead_letter_key = f"gifpt:callback:dead:{job_id}"
+        try:
+            cache.set(dead_letter_key, json.dumps(callback_body), timeout=None)
+            logger.error(
+                "[ANIMATE_CALLBACK] Spring unreachable — pushed to dead-letter key=%s", dead_letter_key
+            )
+        except Exception:
+            logger.exception("[ANIMATE_CALLBACK] failed to write dead-letter job_id=%s", job_id)
+    except Exception:
+        logger.exception("[ANIMATE_CALLBACK] unexpected error job_id=%s", job_id)

@@ -9,7 +9,7 @@ import json
 import logging
 
 from .serializers import AnalyzeRequestSerializer, ChatRequestSerializer
-from .tasks import analyze_pdf_vision
+from .tasks import analyze_pdf_vision, animate_algorithm
 from GIFPT_AI.celery import app as celery_app
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,36 @@ def analyze(request):
         prompt=data["prompt"],
     )
     return Response({"task_id": task.id, "status": "QUEUED"}, status=status.HTTP_202_ACCEPTED)
+
+@api_view(['POST'])
+def animate(request):
+    """Receive animate_algorithm dispatch from Spring Boot.
+
+    Expected body: {"job_id": <int>, "algorithm": "<str>"}
+    """
+    data = getattr(request, "data", {}) or {}
+    if not data and request.body:
+        try:
+            data = json.loads(request.body.decode("utf-8"))
+        except Exception:
+            pass
+
+    missing = [f for f in ("job_id", "algorithm") if not data.get(f)]
+    if missing:
+        return Response(
+            {"error": "missing_fields", "missing": missing},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        job_id = int(data["job_id"])
+    except (ValueError, TypeError):
+        return Response({"error": "invalid_job_id"}, status=status.HTTP_400_BAD_REQUEST)
+
+    algorithm = str(data["algorithm"])[:256]
+    task = animate_algorithm.delay(job_id=job_id, algorithm=algorithm)
+    return Response({"task_id": task.id, "status": "QUEUED"}, status=status.HTTP_202_ACCEPTED)
+
 
 @api_view(['GET'])
 def task_status(request, task_id: str):
