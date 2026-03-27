@@ -149,6 +149,141 @@ Output:
 - Code must be directly executable by `manim`.
 """
 
+_INVALID_COLOR_MAP = {
+    'LIGHT_BLUE': 'BLUE_B',
+    'DARK_BLUE': 'BLUE_D',
+    'LIGHT_RED': 'RED_B',
+    'DARK_RED': 'RED_D',
+    'LIGHT_GREEN': 'GREEN_B',
+    'DARK_GREEN': 'GREEN_D',
+    'LIGHT_YELLOW': 'YELLOW_B',
+    'DARK_YELLOW': 'YELLOW_D',
+    'CYAN': 'TEAL',
+    'MAGENTA': 'PINK',
+    'VIOLET': 'PURPLE',
+    'INDIGO': 'PURPLE_D',
+    'BROWN': 'MAROON',
+    'LIME': 'GREEN_B',
+    'NAVY': 'BLUE_D',
+}
+
+_UNKNOWN_HELPERS = [
+    'AddPointToGraph', 'PlotPoint', 'CreateGraph', 'AnimateCurvePoint',
+    'DrawArrowBetween', 'ShowValueOnPlot',
+]
+
+
+def post_process_manim_code(code: str) -> str:
+    """Clean up LLM-generated Manim code.
+
+    - Strips markdown fences
+    - Replaces invalid color names with valid Manim equivalents
+    - Removes hex color strings
+    - Forces class name to AlgorithmScene
+    - Removes unknown helper calls (replaces with self.wait(0.1))
+    """
+    code = code.replace("```python", "").replace("```", "").strip()
+
+    for invalid, valid in _INVALID_COLOR_MAP.items():
+        code = re.sub(rf'\bcolor\s*=\s*{invalid}\b', f'color={valid}', code)
+        code = re.sub(rf'\b{invalid}\b(?=\s*[,\)])', valid, code)
+
+    code = re.sub(r'color\s*=\s*["\']#[0-9A-Fa-f]{6}["\']', 'color=BLUE', code)
+    code = re.sub(r'class\s+\w+Scene\s*\(Scene\)', 'class AlgorithmScene(Scene)', code)
+
+    for name in _UNKNOWN_HELPERS:
+        code = re.sub(
+            rf'^\s*self\.play\(\s*{name}\([^)]*\)\s*\)\s*$',
+            '        self.wait(0.1)',
+            code,
+            flags=re.M,
+        )
+        code = re.sub(
+            rf'^\s*{name}\([^)]*\)\s*$',
+            '        self.wait(0.1)',
+            code,
+            flags=re.M,
+        )
+
+    return code
+
+
+def _build_few_shot_system_prompt(examples: list[dict]) -> str:
+    """Build a SYSTEM_PROMPT that injects few-shot Manim examples."""
+    examples_text = ""
+    for i, ex in enumerate(examples, 1):
+        examples_text += (
+            f"\n<example_{i} tag=\"{ex.get('tag', '')}\" "
+            f"pattern=\"{ex.get('pattern_type', '')}\" "
+            f"quality=\"{ex.get('quality_score', '')}\">\n"
+            f"{ex.get('code', '').strip()}\n"
+            f"</example_{i}>\n"
+        )
+
+    return f"""
+You are a Manim code generator. Generate complete, executable Manim Python code
+for the requested algorithm.
+
+Below are reference examples of high-quality Manim code. Follow their visual style,
+animation pacing, and structural patterns closely.
+
+<reference_examples>
+{examples_text}
+</reference_examples>
+
+CRITICAL COLOR RULES:
+You MUST ONLY use these exact Manim color constants:
+- Basic: WHITE, BLACK, GRAY, GREY
+- Blue: BLUE, BLUE_A, BLUE_B, BLUE_C, BLUE_D, BLUE_E
+- Red: RED, RED_A, RED_B, RED_C, RED_D, RED_E
+- Green: GREEN, GREEN_A, GREEN_B, GREEN_C, GREEN_D, GREEN_E
+- Yellow: YELLOW, YELLOW_A, YELLOW_B, YELLOW_C, YELLOW_D, YELLOW_E
+- Purple: PURPLE, PURPLE_A, PURPLE_B, PURPLE_C, PURPLE_D, PURPLE_E
+- Orange: ORANGE
+- Pink: PINK, LIGHT_PINK
+- Teal: TEAL, TEAL_A, TEAL_B, TEAL_C, TEAL_D, TEAL_E
+- Gold: GOLD, GOLD_A, GOLD_B, GOLD_C, GOLD_D, GOLD_E
+- Others: MAROON, LIGHT_GRAY, DARK_GRAY
+
+FORBIDDEN COLORS: LIGHT_BLUE, DARK_BLUE, LIGHT_RED, DARK_RED, LIGHT_GREEN, DARK_GREEN,
+CYAN, MAGENTA, VIOLET, INDIGO, BROWN
+
+IMPORTANT RULES:
+- Always include: `from manim import *`
+- Use ONLY the color constants listed above
+- NEVER use hex color strings like "#abcdef"
+- DO NOT invent custom helper functions not in Manim
+- Define a class named AlgorithmScene(Scene) with construct(self)
+- Output ONLY valid Python code (no markdown, no prose)
+- End with self.wait(2)
+"""
+
+
+def call_llm_codegen_for_algorithm(algorithm: str, examples: list[dict]) -> str:
+    """Generate Manim code for a named algorithm using few-shot examples.
+
+    Used by the animate_algorithm Celery task (direct endpoint path).
+    Not used by the PDF pipeline.
+    """
+    system_prompt = _build_few_shot_system_prompt(examples)
+    user_prompt = (
+        f"Generate a complete Manim scene that visually demonstrates the "
+        f"'{algorithm}' algorithm. Animate step-by-step. "
+        f"Follow the style and patterns of the reference examples above. "
+        f"Output ONLY Python code, no markdown."
+    )
+    resp = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        timeout=60,
+    )
+    code = resp.choices[0].message.content
+    return post_process_manim_code(code)
+
+
 def call_llm_codegen(anim_ir: dict):
     prompt = build_prompt_codegen(anim_ir)
     resp = client.chat.completions.create(
@@ -159,52 +294,8 @@ def call_llm_codegen(anim_ir: dict):
         ],
     )
     code = resp.choices[0].message.content
+    return post_process_manim_code(code)
 
-    code = code.replace("```python", "").replace("```", "").strip()
-    
-    # Fix invalid colors - map to valid alternatives
-    INVALID_COLOR_MAP = {
-        'LIGHT_BLUE': 'BLUE_B',
-        'DARK_BLUE': 'BLUE_D',
-        'LIGHT_RED': 'RED_B',
-        'DARK_RED': 'RED_D',
-        'LIGHT_GREEN': 'GREEN_B',
-        'DARK_GREEN': 'GREEN_D',
-        'LIGHT_YELLOW': 'YELLOW_B',
-        'DARK_YELLOW': 'YELLOW_D',
-        'CYAN': 'TEAL',
-        'MAGENTA': 'PINK',
-        'VIOLET': 'PURPLE',
-        'INDIGO': 'PURPLE_D',
-        'BROWN': 'MAROON',
-        'LIME': 'GREEN_B',
-        'NAVY': 'BLUE_D',
-    }
-    
-    for invalid, valid in INVALID_COLOR_MAP.items():
-        # Replace in color= arguments
-        code = re.sub(rf'\bcolor\s*=\s*{invalid}\b', f'color={valid}', code)
-        # Replace standalone color references
-        code = re.sub(rf'\b{invalid}\b(?=\s*[,\)])', valid, code)
-    
-    # Remove hex colors - replace with named colors
-    code = re.sub(r'color\s*=\s*["\']#[0-9A-Fa-f]{6}["\']', 'color=BLUE', code)
-    
-    # Force class name to AlgorithmScene
-    code = re.sub(r'class\s+\w+Scene\s*\(Scene\)', 'class AlgorithmScene(Scene)', code)
-
-    # Strip invented helper calls that cause NameError; replace with small wait to preserve pacing
-    UNKNOWN_HELPERS = [
-        'AddPointToGraph', 'PlotPoint', 'CreateGraph', 'AnimateCurvePoint',
-        'DrawArrowBetween', 'ShowValueOnPlot'
-    ]
-    for name in UNKNOWN_HELPERS:
-        # Remove lines like: self.play(AddPointToGraph(...)) → self.wait(0.1)
-        code = re.sub(rf'^\s*self\.play\(\s*{name}\([^)]*\)\s*\)\s*$', '        self.wait(0.1)', code, flags=re.M)
-        # Also remove any bare calls `${name}(...)`
-        code = re.sub(rf'^\s*{name}\([^)]*\)\s*$', '        self.wait(0.1)', code, flags=re.M)
-    
-    return code
 
 def call_llm_codegen_with_usage(anim_ir: dict):
     prompt = build_prompt_codegen(anim_ir)
@@ -215,40 +306,7 @@ def call_llm_codegen_with_usage(anim_ir: dict):
             {"role": "user", "content": prompt},
         ],
     )
-    code = resp.choices[0].message.content
-    code = code.replace("```python", "").replace("```", "").strip()
-
-    # post-processing mirrors call_llm_codegen
-    INVALID_COLOR_MAP = {
-        'LIGHT_BLUE': 'BLUE_B',
-        'DARK_BLUE': 'BLUE_D',
-        'LIGHT_RED': 'RED_B',
-        'DARK_RED': 'RED_D',
-        'LIGHT_GREEN': 'GREEN_B',
-        'DARK_GREEN': 'GREEN_D',
-        'LIGHT_YELLOW': 'YELLOW_B',
-        'DARK_YELLOW': 'YELLOW_D',
-        'CYAN': 'TEAL',
-        'MAGENTA': 'PINK',
-        'VIOLET': 'PURPLE',
-        'INDIGO': 'PURPLE_D',
-        'BROWN': 'MAROON',
-        'LIME': 'GREEN_B',
-        'NAVY': 'BLUE_D',
-    }
-    for invalid, valid in INVALID_COLOR_MAP.items():
-        code = re.sub(rf'\bcolor\s*=\s*{invalid}\b', f'color={valid}', code)
-        code = re.sub(rf'\b{invalid}\b(?=\s*[,\)])', valid, code)
-    code = re.sub(r'color\s*=\s*["\']#[0-9A-Fa-f]{6}["\']', 'color=BLUE', code)
-    code = re.sub(r'class\s+\w+Scene\s*\(Scene\)', 'class AlgorithmScene(Scene)', code)
-
-    UNKNOWN_HELPERS = [
-        'AddPointToGraph', 'PlotPoint', 'CreateGraph', 'AnimateCurvePoint',
-        'DrawArrowBetween', 'ShowValueOnPlot'
-    ]
-    for name in UNKNOWN_HELPERS:
-        code = re.sub(rf'^\s*self\.play\(\s*{name}\([^)]*\)\s*\)\s*$', '        self.wait(0.1)', code, flags=re.M)
-        code = re.sub(rf'^\s*{name}\([^)]*\)\s*$', '        self.wait(0.1)', code, flags=re.M)
+    code = post_process_manim_code(resp.choices[0].message.content)
 
     usage = getattr(resp, "usage", None)
     if usage:
