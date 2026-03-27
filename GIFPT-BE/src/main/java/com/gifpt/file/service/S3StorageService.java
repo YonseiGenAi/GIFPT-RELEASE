@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.File;
@@ -42,5 +44,23 @@ public class S3StorageService {
         s3Client.putObject(putReq, RequestBody.fromFile(file.toPath()));
 
         return baseUrl + "/" + key;  // 👉 이 URL을 DB나 콜백에 저장
+    }
+
+    /**
+     * Check whether an object exists in S3 using a HEAD request (~50ms, no download).
+     *
+     * @param key S3 object key, e.g. "animations/abc123.mp4"
+     * @return true if the object exists, false if it does not
+     */
+    public boolean objectExists(String key) {
+        try {
+            s3Client.headObject(HeadObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .build());
+            return true;
+        } catch (NoSuchKeyException e) {
+            return false;
+        }
     }
 }

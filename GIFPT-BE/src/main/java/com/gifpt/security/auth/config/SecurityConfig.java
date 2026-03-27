@@ -62,7 +62,8 @@ public class SecurityConfig {
           "/api/v1/analysis/*/complete",
           "/api/v1/analysis/**",
           "/v1/auth/**",
-          "/api/v1/workspaces/**"
+          "/api/v1/workspaces/**",
+          "/api/v1/animate/**"
         ).permitAll()
         .anyRequest().authenticated()
       )
