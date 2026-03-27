@@ -75,6 +75,122 @@ def classify_runtime_error(stderr: str):
 
 
 
+_FALLBACK_CODE = (
+    "from manim import *\n\n"
+    "class AlgorithmScene(Scene):\n"
+    "    def construct(self):\n"
+    "        txt = Text('Fallback', font_size=48, color=WHITE)\n"
+    "        self.play(FadeIn(txt))\n"
+    "        self.wait(1)\n"
+    "        self.play(FadeOut(txt))\n"
+    "        self.wait(1)\n"
+)
+
+
+def run_manim_code(code: str, output_dir: Path, output_name: str | None = None) -> str:
+    """Render Manim code with retry and fallback.
+
+    Args:
+        code: Complete Manim Python source (must define AlgorithmScene).
+        output_dir: Directory to use as Manim's working directory.
+        output_name: Base filename for the output mp4 (default: auto-generated).
+
+    Returns:
+        Absolute path to the rendered mp4 file.
+
+    Raises:
+        RuntimeError: If both primary render and fallback render fail.
+    """
+    import time as _time
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if output_name is None:
+        output_name = f"video_{int(_time.time())}.mp4"
+
+    video_path = None
+    max_render_attempts = 3
+
+    for attempt in range(1, max_render_attempts + 1):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
+            tmp.write(code)
+            tmp_path = tmp.name
+
+        try:
+            subprocess.run(
+                [
+                    "manim", "-ql",
+                    tmp_path,
+                    "AlgorithmScene",
+                    "--format", "mp4",
+                    "-o", output_name,
+                ],
+                cwd=output_dir,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+
+            tmp_name = Path(tmp_path).stem
+            candidate = output_dir / "media" / "videos" / tmp_name / "480p15" / output_name
+            if candidate.exists():
+                video_path = str(candidate.resolve())
+                break
+
+            matches = list(output_dir.rglob(output_name))
+            if matches:
+                video_path = str(matches[0].resolve())
+                break
+
+        except subprocess.CalledProcessError as e:
+            err = classify_runtime_error(e.stderr or "")
+            logger.warning("run_manim_code attempt %d/%d failed: %s", attempt, max_render_attempts, err)
+            if attempt == max_render_attempts:
+                break
+
+        except subprocess.TimeoutExpired:
+            logger.warning("run_manim_code attempt %d/%d timed out", attempt, max_render_attempts)
+            if attempt == max_render_attempts:
+                break
+
+    if video_path:
+        return video_path
+
+    # Fallback: render a minimal placeholder scene
+    logger.warning("run_manim_code: all attempts failed, rendering fallback")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp_fb:
+        tmp_fb.write(_FALLBACK_CODE)
+        fb_path = tmp_fb.name
+    try:
+        subprocess.run(
+            [
+                "manim", "-ql",
+                fb_path,
+                "AlgorithmScene",
+                "--format", "mp4",
+                "-o", output_name,
+            ],
+            cwd=output_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        fb_name = Path(fb_path).stem
+        fb_candidate = output_dir / "media" / "videos" / fb_name / "480p15" / output_name
+        if fb_candidate.exists():
+            return str(fb_candidate.resolve())
+        matches = list(output_dir.rglob(output_name))
+        if matches:
+            return str(matches[0].resolve())
+    except Exception as ee:
+        raise RuntimeError(f"run_manim_code fallback failed: {ee}") from ee
+
+    raise RuntimeError("run_manim_code: video file not found after fallback render")
+
+
 def render_video_from_instructions(instructions: str) -> str:
     """
     PDF 분석 파이프라인에서 전달된 'video instructions' 텍스트를 받아
@@ -180,185 +296,21 @@ def render_video_from_instructions(instructions: str) -> str:
                       f"total:{usage_codegen.get('total_tokens')}")
             break
 
-    # 디버깅용 코드 저장
-    debug_path = f"/data/results/debug_generated_code_{domain}.py"
-    with open(debug_path, "w", encoding="utf-8") as f:
-        f.write(manim_code or "")
-    print(f"📝 Generated code saved: {debug_path}")
+    # 디버깅용 코드 저장 (best-effort)
+    debug_dir = Path(os.environ.get("GIFPT_RESULT_DIR", "/tmp/gifpt_results"))
+    debug_path = debug_dir / f"debug_generated_code_{domain}.py"
+    try:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        debug_path.write_text(manim_code or "", encoding="utf-8")
+        print(f"📝 Generated code saved: {debug_path}")
+    except Exception:
+        pass
 
     # 4단계: Manim 렌더링 (리트라이 + fallback)
     print("\n" + SUBSEP)
     print("🎬 Step 3: Rendering (Manim)")
-    video_path = None
-    max_render_attempts = 3
-
-        # GIFPT용 output_dir: 이미 쓰던 /data/results/videos 유지
     output_dir = RESULT_DIR / "videos"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # manim -o 에 넘길 출력 파일 이름
-    filename_root = f"video_{int(time.time())}"
-    output_name = f"{filename_root}.mp4"
-
-    for attempt in range(1, max_render_attempts + 1):
-        print(f"\n[Render] ─ Attempt {attempt}/{max_render_attempts}")
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
-            tmp.write(manim_code)
-            tmp_path = tmp.name
-
-        try:
-            r_start = time.perf_counter()
-            subprocess.run(
-                [
-                    "manim",
-                    "-ql",
-                    tmp_path,
-                    "AlgorithmScene",
-                    "--format", "mp4",
-                    "-o", output_name,   # 🔥 여기서는 output_name 사용
-                ],
-                cwd=output_dir,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=180,
-            )
-            r_dur = time.perf_counter() - r_start
-
-            # 🔍 Manim이 실제로 저장하는 경로 계산
-            from pathlib import Path
-            tmp_name = Path(tmp_path).stem
-            # /data/results/videos/media/videos/{tmp_name}/480p15/video_xxx.mp4
-            candidate = output_dir / "media" / "videos" / tmp_name / "480p15" / output_name
-
-            if candidate.exists():
-                video_path = str(candidate.resolve())
-                print("✅ Render success")
-                print(f"• Output: {video_path}")
-                print(f"• Duration: {r_dur:.2f}s")
-                break
-            else:
-                # 혹시 해상도나 경로가 다를 수도 있으니 전체 탐색 한번 더
-                matches = list(output_dir.rglob(output_name))
-                if matches:
-                    real = matches[0]
-                    video_path = str(real.resolve())
-                    print("⚠️ Expected %s but found at %s" % (candidate, real))
-                    print(f"• Duration: {r_dur:.2f}s")
-                    break
-                else:
-                    print("⚠️ Render success but file not found under", output_dir)
-
-        except subprocess.CalledProcessError as e:
-            err = classify_runtime_error(e.stderr or "")
-            print(f"- runtime_error = {err['error_type']}")
-            print(f"- message: {err['message']}")
-            if attempt == max_render_attempts:
-                print("- action: fallback template")
-                # 최소 fallback scene
-                fallback_code = (
-                    "from manim import *\n\n"
-                    "class AlgorithmScene(Scene):\n"
-                    "    def construct(self):\n"
-                    "        txt = Text('Fallback', font_size=48, color=WHITE)\n"
-                    "        self.play(FadeIn(txt))\n"
-                    "        self.wait(1)\n"
-                    "        self.play(FadeOut(txt))\n"
-                    "        self.wait(1)\n"
-                )
-                with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp_fb:
-                    tmp_fb.write(fallback_code)
-                    fb_path = tmp_fb.name
-                try:
-                    subprocess.run(
-                        [
-                            "manim",
-                            "-ql",
-                            fb_path,
-                            "AlgorithmScene",
-                            "--format", "mp4",
-                            "-o", output_name,
-                        ],
-                        cwd=output_dir,
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
-                    # fallback 도 같은 방식으로 탐색
-                    from pathlib import Path
-                    fb_name = Path(fb_path).stem
-                    fb_candidate = output_dir / "media" / "videos" / fb_name / "480p15" / output_name
-                    if fb_candidate.exists():
-                        video_path = str(fb_candidate.resolve())
-                        print(f"[Fallback] success: {video_path}")
-                    else:
-                        matches = list(output_dir.rglob(output_name))
-                        if matches:
-                            video_path = str(matches[0].resolve())
-                            print(f"[Fallback] found at {video_path}")
-                        else:
-                            print(f"[Fallback] video not found under {output_dir}")
-                except Exception as ee:
-                    print(f"[Fallback] failed: {ee}")
-                break
-            else:
-                print("- action: retry with feedback (no custom helpers, keep core Manim)")
-                manim_code, _ = call_llm_codegen_with_usage(anim_ir)
-
-        except subprocess.TimeoutExpired:
-            print("- runtime_error = timeout")
-            print("- message: render timeout")
-            if attempt == max_render_attempts:
-                print("- action: fallback template (timeout)")
-                fallback_code = (
-                    "from manim import *\n\n"
-                    "class AlgorithmScene(Scene):\n"
-                    "    def construct(self):\n"
-                    "        txt = Text('Fallback', font_size=48, color=WHITE)\n"
-                    "        self.play(FadeIn(txt))\n"
-                    "        self.wait(1)\n"
-                    "        self.play(FadeOut(txt))\n"
-                    "        self.wait(1)\n"
-                )
-                with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp_fb:
-                    tmp_fb.write(fallback_code)
-                    fb_path = tmp_fb.name
-                try:
-                    subprocess.run(
-                        [
-                            "manim",
-                            "-ql",
-                            fb_path,
-                            "AlgorithmScene",
-                            "--format", "mp4",
-                            "-o", output_name,
-                        ],
-                        cwd=output_dir,
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
-                    from pathlib import Path
-                    fb_name = Path(fb_path).stem
-                    fb_candidate = output_dir / "media" / "videos" / fb_name / "480p15" / output_name
-                    if fb_candidate.exists():
-                        video_path = str(fb_candidate.resolve())
-                        print(f"[Fallback] success: {video_path}")
-                    else:
-                        matches = list(output_dir.rglob(output_name))
-                        if matches:
-                            video_path = str(matches[0].resolve())
-                            print(f"[Fallback] found at {video_path}")
-                        else:
-                            print(f"[Fallback] video not found under {output_dir}")
-                except Exception as ee:
-                    print(f"[Fallback] failed: {ee}")
-                break
-            else:
-                print("- action: retry")
-                manim_code, _ = call_llm_codegen_with_usage(anim_ir)
-
+    output_name = f"video_{int(time.time())}.mp4"
+    video_path = run_manim_code(manim_code, output_dir, output_name)
     logger.info("🎬 video rendered at %s", video_path)
     return video_path
